@@ -1,26 +1,57 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  /* === NEUTRAL / PAGE SCALE === */
+  --color-page:   #f5f7fa;
+  --color-surface: #ffffff;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Sidebar / nav tones — same base as page */
+  --color-sidebar: #f5f7fa;
+  --color-sidebar-border: #e4e9f0;
+
+  /* Neutral text scale */
+  --color-ink-900: #1a2332;
+  --color-ink-700: #2d3f56;
+  --color-ink-500: #5a7190;
+  --color-ink-400: #7a94af;
+  --color-ink-300: #a8bfd4;
+  --color-ink-100: #dce8f0;
+  --color-ink-50:  #eef4f9;
+
+  /* === BRAND ORANGE (primary action colour) === */
+  --color-brand-700: #b84d08;
+  --color-brand-600: #c2570a;
+  --color-brand-500: #f97316;
+  --color-brand-400: #fb923c;
+  --color-brand-100: #ffedd5;
+  --color-brand-50:  #fff7ed;
+
+  /* === TEAL (success / complete states) === */
+  --color-teal-600: #0d7c6e;
+  --color-teal-500: #0f9688;
+  --color-teal-400: #14b8a6;
+  --color-teal-100: #d5f5f0;
+  --color-teal-50:  #eefbf8;
+
+  /* === COACH GREEN (coaching CTA card) === */
+  --color-cg-900: #0d4a2e;
+  --color-cg-800: #1a6644;
+  --color-cg-700: #237a52;
+  --color-cg-400: #4db884;
+  --color-cg-200: #b2f0d0;
+  --color-cg-100: #dff6ec;
+
+  --font-sans: var(--font-inter);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: #f5f7fa;
+  color: #1a2332;
+  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
 }
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #c8d8e8; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #a8bfd4; }
