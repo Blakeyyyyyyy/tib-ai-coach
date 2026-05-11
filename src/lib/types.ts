@@ -2,6 +2,27 @@ export interface Profile {
   id: string;
   email: string;
   full_name: string;
+  tier: 'free' | 'paid';
+  created_at: string;
+}
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  description: string | null;
+  event_date: string;
+  location: string | null;
+  event_url: string | null;
+  is_featured: boolean;
+  created_at: string;
+}
+
+export interface NewsPost {
+  id: string;
+  title: string;
+  body: string;
+  image_url: string | null;
+  is_published: boolean;
   created_at: string;
 }
 

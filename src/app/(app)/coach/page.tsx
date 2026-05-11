@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -15,8 +15,12 @@ import {
   ArrowRight,
   Copy,
   Check,
+  Plus,
+  MessageSquare,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
-import { AIResponse, TaskFromAI } from '@/lib/types';
+import { AIResponse, Conversation, Message, TaskFromAI } from '@/lib/types';
 
 interface ChatMessage {
   id: string;
@@ -34,9 +38,9 @@ const resourceIcons: Record<string, typeof Video> = {
 };
 
 const topicChips = [
+  '90-Day Goal',
   'Cash Flow',
   'Team Management',
-  'Project Planning',
   'Pricing',
   'Client Relations',
   'Systems',
@@ -44,19 +48,36 @@ const topicChips = [
 
 export default function CoachPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const loadConversations = useCallback(async (uid: string) => {
+    const supabase = createClient();
+    const { data } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('user_id', uid)
+      .order('updated_at', { ascending: false })
+      .limit(30);
+    if (data) setConversations(data);
+  }, []);
 
   useEffect(() => {
     async function init() {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) setUserId(user.id);
+      if (user) {
+        setUserId(user.id);
+        await loadConversations(user.id);
+      }
       const savedPrompt = sessionStorage.getItem('coach_prompt');
       if (savedPrompt) {
         sessionStorage.removeItem('coach_prompt');
@@ -64,11 +85,49 @@ export default function CoachPage() {
       }
     }
     init();
-  }, []);
+  }, [loadConversations]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  const loadConversationMessages = async (convId: string) => {
+    setLoadingHistory(true);
+    setConversationId(convId);
+    setMessages([]);
+    const supabase = createClient();
+    const { data } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('conversation_id', convId)
+      .order('created_at', { ascending: true });
+
+    if (data) {
+      const loaded: ChatMessage[] = (data as Message[]).map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        parsed: m.role === 'assistant' && m.resources
+          ? {
+              answer: m.content,
+              next_steps: [],
+              tasks: m.tasks_created || [],
+              resources: m.resources || [],
+            }
+          : undefined,
+        created_at: m.created_at,
+      }));
+      setMessages(loaded);
+    }
+    setLoadingHistory(false);
+  };
+
+  const startNewChat = () => {
+    setConversationId(null);
+    setMessages([]);
+    setInput('');
+    inputRef.current?.focus();
+  };
 
   const saveTasks = async (tasks: TaskFromAI[], convId: string) => {
     if (!userId || tasks.length === 0) return;
@@ -116,6 +175,7 @@ export default function CoachPage() {
       updated_at: now,
     });
     setConversationId(id);
+    if (userId) loadConversations(userId);
     return id;
   };
 
@@ -157,6 +217,10 @@ export default function CoachPage() {
       if (data.tasks && data.tasks.length > 0) {
         await saveTasks(data.tasks, convId);
       }
+      // Update conversation timestamp
+      const supabase = createClient();
+      await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', convId);
+      if (userId) loadConversations(userId);
     } catch {
       setMessages((prev) => [
         ...prev,
@@ -187,87 +251,202 @@ export default function CoachPage() {
   };
 
   const handleChipClick = (topic: string) => {
-    setInput(`I need help with ${topic.toLowerCase()} in my trade business`);
+    if (topic.startsWith('I need') || topic.startsWith('How') || topic.startsWith('Help') || topic.startsWith("I'm") || topic.startsWith('Break')) {
+      setInput(topic);
+    } else if (topic === '90-Day Goal') {
+      setInput('I want to break down my 90-day business goal into a simple, startable plan');
+    } else {
+      setInput(`I need help with ${topic.toLowerCase()} in my trade business`);
+    }
     inputRef.current?.focus();
   };
 
-  return (
-    <div className="flex flex-col h-[calc(100vh-3.5rem)] lg:h-screen bg-page">
-      {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto px-4 lg:px-8 py-6">
-        <div className="max-w-3xl mx-auto">
-          {messages.length === 0 ? (
-            <EmptyState onChipClick={handleChipClick} />
-          ) : (
-            <div className="space-y-6">
-              {messages.map((msg) => (
-                <div key={msg.id}>
-                  {msg.role === 'user' ? (
-                    <UserMessage content={msg.content} />
-                  ) : (
-                    <AssistantMessage
-                      message={msg}
-                      onCopy={handleCopy}
-                      copiedId={copiedId}
-                    />
-                  )}
-                </div>
-              ))}
-              {loading && (
-                <div className="flex items-center gap-3 text-ink-400">
-                  <div className="w-8 h-8 rounded-full bg-brand-500 flex items-center justify-center shrink-0">
-                    <span className="text-white text-xs font-bold">TiB</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Loader2 size={16} className="animate-spin" />
-                    <span className="text-sm">Thinking...</span>
-                  </div>
-                </div>
-              )}
-              <div ref={messagesEndRef} />
-            </div>
-          )}
-        </div>
-      </div>
+  const formatDate = (iso: string) => {
+    const d = new Date(iso);
+    const now = new Date();
+    const diffDays = Math.floor((now.getTime() - d.getTime()) / 86400000);
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+  };
 
-      {/* Input Area */}
-      <div className="border-t border-sidebar-border bg-surface px-4 lg:px-8 py-4">
-        <div className="max-w-3xl mx-auto">
-          {messages.length === 0 && (
-            <div className="flex flex-wrap gap-2 mb-3">
-              {topicChips.map((chip) => (
+  return (
+    <div className="flex h-[calc(100vh-3.5rem)] lg:h-screen bg-page overflow-hidden">
+
+      {/* Chat History Sidebar */}
+      <div className={`hidden lg:flex flex-col border-r border-sidebar-border bg-page transition-all duration-300 shrink-0 ${historyOpen ? 'w-64' : 'w-12'}`}>
+        {historyOpen ? (
+          <>
+            <div className="flex items-center justify-between px-4 pt-5 pb-3 border-b border-sidebar-border">
+              <h2 className="text-xs font-semibold text-ink-400 uppercase tracking-wider">Chats</h2>
+              <button
+                onClick={() => setHistoryOpen(false)}
+                className="text-ink-300 hover:text-ink-600 transition-colors"
+                title="Collapse"
+              >
+                <ChevronLeft size={16} />
+              </button>
+            </div>
+            <div className="px-3 pt-3 pb-2">
+              <button
+                onClick={startNewChat}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-brand-500 text-white hover:bg-brand-600 transition-colors shadow-sm"
+              >
+                <Plus size={15} />
+                New Chat
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-0.5">
+              {conversations.length === 0 ? (
+                <p className="text-xs text-ink-300 text-center pt-6 px-2">No conversations yet. Start chatting!</p>
+              ) : (
+                conversations.map((conv) => (
+                  <button
+                    key={conv.id}
+                    onClick={() => loadConversationMessages(conv.id)}
+                    className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors group ${
+                      conversationId === conv.id
+                        ? 'bg-brand-50 text-brand-700 border border-brand-100'
+                        : 'text-ink-600 hover:bg-ink-50 hover:text-ink-900'
+                    }`}
+                  >
+                    <p className="font-medium truncate leading-snug">{conv.title}</p>
+                    <p className="text-xs text-ink-300 mt-0.5">{formatDate(conv.updated_at)}</p>
+                  </button>
+                ))
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="flex flex-col items-center pt-5 gap-3">
+            <button
+              onClick={() => setHistoryOpen(true)}
+              className="text-ink-300 hover:text-ink-600 transition-colors"
+              title="Expand chat history"
+            >
+              <ChevronRight size={16} />
+            </button>
+            <button
+              onClick={startNewChat}
+              className="w-8 h-8 rounded-lg bg-brand-500 text-white flex items-center justify-center hover:bg-brand-600 transition-colors"
+              title="New chat"
+            >
+              <Plus size={15} />
+            </button>
+            <div className="flex flex-col gap-1 w-full px-1 mt-1">
+              {conversations.slice(0, 8).map((conv) => (
                 <button
-                  key={chip}
-                  onClick={() => handleChipClick(chip)}
-                  className="px-3 py-1.5 rounded-full text-xs font-medium bg-ink-50 text-ink-600 hover:bg-brand-50 hover:text-brand-600 border border-ink-100 hover:border-brand-200 transition-colors"
+                  key={conv.id}
+                  onClick={() => loadConversationMessages(conv.id)}
+                  title={conv.title}
+                  className={`w-full h-8 rounded-lg flex items-center justify-center transition-colors ${
+                    conversationId === conv.id ? 'bg-brand-50 text-brand-600' : 'text-ink-300 hover:bg-ink-50 hover:text-ink-600'
+                  }`}
                 >
-                  {chip}
+                  <MessageSquare size={14} />
                 </button>
               ))}
             </div>
-          )}
-          <div className="flex items-end gap-3">
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Ask the Coach about your next strategy..."
-              rows={1}
-              className="flex-1 resize-none rounded-xl border border-ink-100 bg-page px-4 py-3 text-sm text-ink-900 placeholder:text-ink-300 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400 max-h-32 transition-colors"
-              style={{ minHeight: '44px' }}
-            />
-            <button
-              onClick={handleSend}
-              disabled={!input.trim() || loading}
-              className="shrink-0 w-11 h-11 rounded-xl bg-brand-500 text-white flex items-center justify-center hover:bg-brand-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-md shadow-brand-500/20"
-            >
-              <Send size={18} />
-            </button>
           </div>
-          <p className="text-xs text-ink-300 mt-2 text-center">
-            AI advice should be verified against local regulations.
+        )}
+      </div>
+
+      {/* Main Chat Area */}
+      <div className="flex flex-col flex-1 min-w-0">
+        {/* Mobile new chat button */}
+        <div className="lg:hidden flex items-center justify-between px-4 py-2 border-b border-sidebar-border">
+          <p className="text-xs text-ink-400 font-medium">
+            {conversationId ? conversations.find(c => c.id === conversationId)?.title || 'Chat' : 'New Chat'}
           </p>
+          <button
+            onClick={startNewChat}
+            className="flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700"
+          >
+            <Plus size={13} /> New Chat
+          </button>
+        </div>
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto px-4 lg:px-8 py-6">
+          <div className="max-w-3xl mx-auto">
+            {loadingHistory ? (
+              <div className="flex items-center justify-center min-h-[40vh]">
+                <Loader2 size={24} className="animate-spin text-ink-300" />
+              </div>
+            ) : messages.length === 0 ? (
+              <EmptyState onChipClick={handleChipClick} />
+            ) : (
+              <div className="space-y-6">
+                {messages.map((msg) => (
+                  <div key={msg.id}>
+                    {msg.role === 'user' ? (
+                      <UserMessage content={msg.content} />
+                    ) : (
+                      <AssistantMessage
+                        message={msg}
+                        onCopy={handleCopy}
+                        copiedId={copiedId}
+                      />
+                    )}
+                  </div>
+                ))}
+                {loading && (
+                  <div className="flex items-center gap-3 text-ink-400">
+                    <div className="w-8 h-8 rounded-full bg-brand-500 flex items-center justify-center shrink-0">
+                      <span className="text-white text-xs font-bold">TiB</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Loader2 size={16} className="animate-spin" />
+                      <span className="text-sm">Thinking...</span>
+                    </div>
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Input Area */}
+        <div className="border-t border-sidebar-border bg-surface px-4 lg:px-8 py-4">
+          <div className="max-w-3xl mx-auto">
+            {messages.length === 0 && (
+              <div className="flex flex-wrap gap-2 mb-3">
+                {topicChips.map((chip) => (
+                  <button
+                    key={chip}
+                    onClick={() => handleChipClick(chip)}
+                    className="px-3 py-1.5 rounded-full text-xs font-medium bg-ink-50 text-ink-600 hover:bg-brand-50 hover:text-brand-600 border border-ink-100 hover:border-brand-200 transition-colors"
+                  >
+                    {chip}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex items-end gap-3">
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Ask the Coach about your next strategy..."
+                rows={1}
+                className="flex-1 resize-none rounded-xl border border-ink-100 bg-page px-4 py-3 text-sm text-ink-900 placeholder:text-ink-300 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400 max-h-32 transition-colors"
+                style={{ minHeight: '44px' }}
+              />
+              <button
+                onClick={handleSend}
+                disabled={!input.trim() || loading}
+                className="shrink-0 w-11 h-11 rounded-xl bg-brand-500 text-white flex items-center justify-center hover:bg-brand-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-md shadow-brand-500/20"
+              >
+                <Send size={18} />
+              </button>
+            </div>
+            <p className="text-xs text-ink-300 mt-2 text-center">
+              AI advice should be verified against local regulations.
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -282,13 +461,13 @@ function EmptyState({ onChipClick }: { onChipClick: (t: string) => void }) {
       </div>
       <h2 className="text-2xl font-bold text-ink-900 mb-2">TiB AI Coach</h2>
       <p className="text-ink-400 max-w-md mb-8">
-        Ask me anything about running your trade business. I'll give you practical advice, clear next steps, and actionable tasks.
+        Ask me anything about running your trade business. I&apos;ll give you practical advice, clear next steps, and actionable tasks.
       </p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg">
         {[
+          'Break down my 90-day goal into simple steps',
           'How do I improve cash flow during slow months?',
           'Help me write a job ad for a new apprentice',
-          'What systems should I set up first?',
           "I'm losing money on projects — how do I fix pricing?",
         ].map((q) => (
           <button

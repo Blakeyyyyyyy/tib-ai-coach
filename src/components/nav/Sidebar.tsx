@@ -6,6 +6,8 @@ import {
   LayoutDashboard,
   MessageSquare,
   CheckSquare,
+  Calendar,
+  Newspaper,
   LogOut,
   Menu,
   X,
@@ -21,6 +23,8 @@ const navItems = [
   { href: '/dashboard', label: 'Home', icon: LayoutDashboard },
   { href: '/coach', label: 'AI Coach', icon: MessageSquare },
   { href: '/tasks', label: 'Tasks', icon: CheckSquare },
+  { href: '/calendar', label: 'Calendar', icon: Calendar },
+  { href: '/news', label: 'News', icon: Newspaper },
 ];
 
 export default function Sidebar() {
