@@ -50,6 +50,16 @@ export interface Resource {
   link: string;
 }
 
+/** Citation to a Storage PDF (`pdf_url` is usually `/api/rag/pdf?chunk_id=…` so links stay valid after save). */
+export interface RagSource {
+  chunk_id: string;
+  title: string;
+  pdf_url: string | null;
+  page_url?: string | null;
+  storage_bucket?: string | null;
+  storage_path?: string | null;
+}
+
 export interface Message {
   id: string;
   conversation_id: string;
@@ -57,6 +67,7 @@ export interface Message {
   content: string;
   resources: Resource[] | null;
   tasks_created: TaskFromAI[] | null;
+  rag_sources?: RagSource[] | null;
   created_at: string;
 }
 
@@ -82,4 +93,19 @@ export interface AIResponse {
   next_steps: string[];
   tasks: TaskFromAI[];
   resources: Resource[];
+  rag_sources?: RagSource[];
+}
+
+export interface Announcement {
+  id: string;
+  tag: string;
+  title: string;
+  summary: string | null;
+  description: string | null;
+  event_date: string | null;
+  published: boolean;
+  starts_at: string | null;
+  ends_at: string | null;
+  created_at: string;
+  updated_at: string;
 }

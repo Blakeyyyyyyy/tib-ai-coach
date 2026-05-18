@@ -137,15 +137,13 @@ max_catalogs = 2
 # Analytics Buckets is available to Supabase Pro plan.
 # [storage.analytics.buckets.my-warehouse]
 
-# Store vector embeddings in S3 for large and durable datasets
-# This feature is only available on the hosted platform.
+# Supabase hosted Vector buckets (S3-backed), not app pgvector. Off by default.
 [storage.vector]
 enabled = false
 max_buckets = 10
 max_indexes = 5
 
-# Vector Buckets is available to Supabase Pro plan.
-# [storage.vector.buckets.documents-openai]
+# [storage.vector.buckets.example-bucket]
 
 [auth]
 enabled = true

@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { COACH_SYSTEM_PROMPT, parseAIResponse } from '@/lib/ai/coach';
+import {
+  COACH_SYSTEM_PROMPT,
+  parseAIResponse,
+} from '@/lib/ai/coach';
+import {
+  retrieveStorageRag,
+  ragContextSystemAppendix,
+} from '@/lib/ai/rag-storage';
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,10 +19,40 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const anthropicMessages = messages.map((m: { role: string; content: string }) => ({
-      role: m.role,
-      content: m.content,
-    }));
+    const anthropicMessages = messages.map(
+      (m: { role: string; content: string }) => ({
+        role: m.role,
+        content: m.content,
+      })
+    );
+
+    let systemPrompt = COACH_SYSTEM_PROMPT;
+    let ragSources: { chunk_id: string; title: string; pdf_url: string | null; page_url?: string | null }[] = [];
+
+    const lastUser = [...messages]
+      .reverse()
+      .find((m: { role: string; content: string }) => m.role === 'user') as
+      | { role: string; content: string }
+      | undefined;
+
+    if (
+      lastUser?.content &&
+      process.env.OPENAI_API_KEY &&
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    ) {
+      try {
+        const rag = await retrieveStorageRag(
+          lastUser.content,
+          process.env.OPENAI_API_KEY
+        );
+        if (rag?.contextBlock) {
+          systemPrompt += ragContextSystemAppendix(rag.contextBlock);
+          ragSources = rag.sources;
+        }
+      } catch (e) {
+        console.error('Storage RAG skipped:', e);
+      }
+    }
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -27,7 +64,7 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 1500,
-        system: COACH_SYSTEM_PROMPT,
+        system: systemPrompt,
         messages: anthropicMessages,
       }),
     });
@@ -47,6 +84,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       ...parsed,
+      rag_sources: ragSources,
       conversationId,
     });
   } catch (error) {

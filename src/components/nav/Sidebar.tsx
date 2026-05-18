@@ -47,10 +47,13 @@ export default function Sidebar() {
           collapsed ? 'lg:w-16' : 'lg:w-60'
         }`}
       >
-        {/* Logo */}
+        {/* Logo — links to Home */}
         <div className={`pt-6 pb-6 border-b border-sidebar-border flex items-center ${collapsed ? 'justify-center px-0' : 'px-5 justify-between'}`}>
           {!collapsed && (
-            <div className="flex items-center gap-2.5 min-w-0">
+            <Link
+              href="/dashboard"
+              className="flex items-center gap-2.5 min-w-0 rounded-lg -m-1 p-1 hover:bg-ink-50/80 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+            >
               <div className="w-8 h-8 bg-brand-500 rounded-lg flex items-center justify-center shrink-0 shadow-sm">
                 <span className="text-white font-bold text-xs">TiB</span>
               </div>
@@ -58,12 +61,16 @@ export default function Sidebar() {
                 <h1 className="text-ink-900 font-semibold text-sm leading-tight truncate">TiB AI Coach</h1>
                 <p className="text-ink-400 text-xs truncate">Trade Coaching</p>
               </div>
-            </div>
+            </Link>
           )}
           {collapsed && (
-            <div className="w-8 h-8 bg-brand-500 rounded-lg flex items-center justify-center shadow-sm">
+            <Link
+              href="/dashboard"
+              title="Home"
+              className="w-8 h-8 bg-brand-500 rounded-lg flex items-center justify-center shadow-sm hover:opacity-90 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 focus-visible:ring-offset-2"
+            >
               <span className="text-white font-bold text-xs">TiB</span>
-            </div>
+            </Link>
           )}
         </div>
 
@@ -125,12 +132,15 @@ export default function Sidebar() {
 
       {/* Mobile Header */}
       <header className="lg:hidden fixed top-0 inset-x-0 h-14 bg-page border-b border-sidebar-border flex items-center justify-between px-4 z-40">
-        <div className="flex items-center gap-2">
+        <Link
+          href="/dashboard"
+          className="flex items-center gap-2 rounded-lg -ml-1 pl-1 pr-2 py-1 hover:bg-ink-50/80 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+        >
           <div className="w-7 h-7 bg-brand-500 rounded-md flex items-center justify-center shadow-sm">
             <span className="text-white font-bold text-xs">TiB</span>
           </div>
           <span className="text-ink-900 font-semibold text-sm">TiB AI Coach</span>
-        </div>
+        </Link>
         <button
           onClick={() => setMobileOpen(!mobileOpen)}
           className="text-ink-500 hover:text-ink-900 p-1 transition-colors"
@@ -144,7 +154,11 @@ export default function Sidebar() {
         <div className="lg:hidden fixed inset-0 z-50">
           <div className="absolute inset-0 bg-black/30" onClick={() => setMobileOpen(false)} />
           <aside className="absolute left-0 top-0 bottom-0 w-64 bg-page border-r border-sidebar-border flex flex-col">
-            <div className="px-5 pt-6 pb-6 border-b border-sidebar-border flex items-center gap-2.5">
+            <Link
+              href="/dashboard"
+              onClick={() => setMobileOpen(false)}
+              className="px-5 pt-6 pb-6 border-b border-sidebar-border flex items-center gap-2.5 hover:bg-ink-50/60 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500/30"
+            >
               <div className="w-8 h-8 bg-brand-500 rounded-lg flex items-center justify-center shrink-0">
                 <span className="text-white font-bold text-xs">TiB</span>
               </div>
@@ -152,7 +166,7 @@ export default function Sidebar() {
                 <h1 className="text-ink-900 font-semibold text-sm leading-tight">TiB AI Coach</h1>
                 <p className="text-ink-400 text-xs">Trade Coaching</p>
               </div>
-            </div>
+            </Link>
 
             <nav className="flex-1 px-3 pt-4 space-y-0.5">
               {navItems.map((item) => {
