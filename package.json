@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "ingest:storage": "tsx scripts/ingest-storage-pdfs.ts"
+    "ingest:storage": "tsx scripts/ingest-storage-pdfs.ts",
+    "heal:storage-paths": "tsx scripts/heal-storage-paths.ts",
+    "cleanup:storage-rag": "tsx scripts/cleanup-orphan-chunks.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.9.0",

@@ -1,11 +1,21 @@
 'use client';
 
 import { useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { PanelLeft } from 'lucide-react';
+import CoachChat from '@/components/coach/CoachChat';
 import ConversationPanel from '@/components/coach/ConversationPanel';
 import { CoachSessionsProvider } from '@/contexts/CoachSessionsContext';
 
-export default function CoachLayout({ children }: { children: React.ReactNode }) {
+function conversationIdFromPath(pathname: string | null): string | null {
+  if (!pathname) return null;
+  const match = pathname.match(/^\/coach\/([^/]+)$/);
+  return match?.[1] ?? null;
+}
+
+export default function CoachLayout() {
+  const pathname = usePathname();
+  const conversationId = conversationIdFromPath(pathname);
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
 
   return (
@@ -28,7 +38,9 @@ export default function CoachLayout({ children }: { children: React.ReactNode })
             </button>
           </div>
 
-          <div className="flex flex-1 flex-col min-h-0 min-w-0 overflow-hidden">{children}</div>
+          <div className="flex flex-1 flex-col min-h-0 min-w-0 overflow-hidden">
+            <CoachChat conversationId={conversationId} />
+          </div>
         </div>
       </div>
     </CoachSessionsProvider>

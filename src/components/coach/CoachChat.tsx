@@ -18,6 +18,12 @@ import {
   Check,
   FileText,
 } from 'lucide-react';
+import { parseChatStreamLine } from '@/lib/ai/chat-stream';
+import {
+  coachJsonPastAnswerField,
+  extractStreamingAnswer,
+  tryParseStreamingCoachJson,
+} from '@/lib/ai/coach';
 import { AIResponse, TaskFromAI } from '@/lib/types';
 import { dedupeRagSourcesForDisplay } from '@/lib/rag-sources-dedupe';
 import { useCoachSessions } from '@/contexts/CoachSessionsContext';
@@ -28,6 +34,11 @@ interface ChatMessage {
   content: string;
   parsed?: AIResponse;
   created_at: string;
+  /** True while the answer text is still streaming */
+  streaming?: boolean;
+  streamStatus?: string;
+  /** Answer done; waiting for tasks / PDF block JSON */
+  finishingStructured?: boolean;
 }
 
 const resourceIcons: Record<string, typeof Video> = {
@@ -36,6 +47,27 @@ const resourceIcons: Record<string, typeof Video> = {
   blog: BookOpen,
   tool: Wrench,
 };
+
+function chatApiErrorMessage(
+  status: number,
+  raw: string,
+  contentType: string | null
+): string {
+  if (status === 401) {
+    return 'Your session expired. Please refresh the page and sign in again.';
+  }
+  const trimmed = raw.trimStart();
+  if (
+    !trimmed ||
+    trimmed.startsWith('<!') ||
+    trimmed.startsWith('<html') ||
+    contentType?.includes('text/html')
+  ) {
+    if (!trimmed) return 'Empty response from the server. Please try again.';
+    return 'Unexpected response from the server. Refresh the page and sign in again.';
+  }
+  return `Invalid response from the server (${status})`;
+}
 
 function rowsToMessages(
   rows: {
@@ -97,6 +129,8 @@ export default function CoachChat({
   const [conversationTitle, setConversationTitle] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  /** Conversation id currently reflected in `messages` (skip DB reload after URL update). */
+  const messagesConvIdRef = useRef<string | null>(null);
 
   const touchConversation = useCallback(async (convId: string) => {
     const supabase = createClient();
@@ -123,12 +157,6 @@ export default function CoachChat({
   }, []);
 
   useEffect(() => {
-    if (routeConversationId) {
-      setPendingConvId(null);
-    }
-  }, [routeConversationId]);
-
-  useEffect(() => {
     if (!routeConversationId) {
       setConversationTitle(null);
       return;
@@ -153,6 +181,16 @@ export default function CoachChat({
     if (!routeConversationId) {
       setMessages([]);
       setPendingConvId(null);
+      messagesConvIdRef.current = null;
+      setLoadingHistory(false);
+      return;
+    }
+
+    if (
+      messagesConvIdRef.current === routeConversationId &&
+      messages.length > 0
+    ) {
+      setPendingConvId(null);
       setLoadingHistory(false);
       return;
     }
@@ -168,8 +206,12 @@ export default function CoachChat({
         .order('created_at', { ascending: true });
       if (!cancelled && !error && data) {
         setMessages(rowsToMessages(data));
+        messagesConvIdRef.current = routeConversationId;
       }
-      if (!cancelled) setLoadingHistory(false);
+      if (!cancelled) {
+        setPendingConvId(null);
+        setLoadingHistory(false);
+      }
     }
     loadHistory();
     return () => {
@@ -230,6 +272,7 @@ export default function CoachChat({
       updated_at: now,
     });
     setPendingConvId(id);
+    messagesConvIdRef.current = id;
     bumpConversations();
     return id;
   };
@@ -248,6 +291,21 @@ export default function CoachChat({
     setInput('');
     setLoading(true);
     await saveMessage(userMsg, convId);
+
+    const assistantId = uuidv4();
+    const assistantCreatedAt = new Date().toISOString();
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: assistantId,
+        role: 'assistant',
+        content: '',
+        streaming: true,
+        streamStatus: 'Thinking…',
+        created_at: assistantCreatedAt,
+      },
+    ]);
+
     try {
       const historyForApi = [...messages, userMsg].map((m) => ({
         role: m.role,
@@ -255,44 +313,176 @@ export default function CoachChat({
       }));
       const res = await fetch('/api/chat', {
         method: 'POST',
+        credentials: 'same-origin',
+        redirect: 'manual',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: historyForApi,
           conversationId: convId,
         }),
       });
-      const raw = await res.text();
-      let payload: AIResponse & { error?: string };
-      try {
-        payload = JSON.parse(raw) as AIResponse & { error?: string };
-      } catch {
-        throw new Error(`Chat request failed (${res.status})`);
-      }
-      if (!res.ok) {
+      if (res.type === 'opaqueredirect' || (res.status >= 300 && res.status < 400)) {
         throw new Error(
-          payload.error || `Chat request failed (${res.status})`
+          'Your session expired. Please refresh the page and sign in again.'
         );
       }
-      const data = payload as AIResponse;
-      const assistantMsg: ChatMessage = {
-        id: uuidv4(),
-        role: 'assistant',
-        content: data.answer,
-        parsed: data,
-        created_at: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, assistantMsg]);
-      await saveMessage(assistantMsg, convId);
-      if (data.tasks && data.tasks.length > 0) {
-        await saveTasks(data.tasks, convId);
+
+      const contentType = res.headers.get('content-type') ?? '';
+      const isStream = contentType.includes('ndjson');
+
+      if (!res.ok) {
+        const raw = await res.text();
+        let errMsg = chatApiErrorMessage(res.status, raw, contentType);
+        try {
+          const j = JSON.parse(raw) as { error?: string };
+          if (j.error) errMsg = j.error;
+        } catch {
+          /* use default */
+        }
+        throw new Error(errMsg);
       }
-      await touchConversation(convId);
-      bumpConversations();
+
+      if (!isStream || !res.body) {
+        throw new Error('Unexpected response from chat API');
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let lineBuffer = '';
+      let rawJson = '';
+      let finalData: AIResponse | null = null;
+      let lastAnswerPreview = '';
+
+      const patchAssistant = (
+        patch:
+          | Partial<ChatMessage>
+          | ((current: ChatMessage) => Partial<ChatMessage>)
+      ) => {
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (m.id !== assistantId) return m;
+            const next =
+              typeof patch === 'function' ? patch(m) : patch;
+            return { ...m, ...next };
+          })
+        );
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        lineBuffer += decoder.decode(value, { stream: true });
+        const lines = lineBuffer.split('\n');
+        lineBuffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+          const event = parseChatStreamLine(line);
+          if (!event) continue;
+
+          if (event.type === 'status') {
+            patchAssistant({ streamStatus: event.message });
+          } else if (event.type === 'meta') {
+            patchAssistant({
+              parsed: {
+                answer: '',
+                next_steps: [],
+                tasks: [],
+                resources: [],
+                rag_sources: event.rag_sources,
+              },
+            });
+          } else if (event.type === 'delta') {
+            rawJson += event.text;
+            const preview =
+              extractStreamingAnswer(rawJson) ||
+              (rawJson.length > 0 && !rawJson.trimStart().startsWith('{')
+                ? rawJson
+                : '');
+            const answerStable =
+              preview.length > 0 &&
+              preview === lastAnswerPreview &&
+              preview.length > 40;
+            lastAnswerPreview = preview;
+            const finishingStructured =
+              !finalData &&
+              Boolean(preview) &&
+              (coachJsonPastAnswerField(rawJson) || answerStable);
+
+            const early = tryParseStreamingCoachJson(rawJson);
+            if (
+              early &&
+              (early.tasks.length > 0 ||
+                early.next_steps.length > 0 ||
+                early.resources.length > 0)
+            ) {
+              finalData = early;
+              patchAssistant((m) => ({
+                content: early.answer,
+                parsed: {
+                  ...early,
+                  rag_sources:
+                    early.rag_sources?.length
+                      ? early.rag_sources
+                      : m.parsed?.rag_sources,
+                },
+                streaming: false,
+                finishingStructured: false,
+                streamStatus: undefined,
+              }));
+            } else {
+              patchAssistant((m) => ({
+                content: preview,
+                streamStatus: undefined,
+                streaming: !finishingStructured,
+                finishingStructured,
+                parsed: m.parsed
+                  ? { ...m.parsed, answer: preview || m.parsed.answer }
+                  : undefined,
+              }));
+            }
+          } else if (event.type === 'done') {
+            finalData = event.parsed;
+            patchAssistant({
+              content: finalData.answer,
+              parsed: finalData,
+              streaming: false,
+              finishingStructured: false,
+              streamStatus: undefined,
+            });
+          } else if (event.type === 'error') {
+            throw new Error(event.error);
+          }
+        }
+      }
+
+      if (!finalData) {
+        throw new Error('The response ended before the coach finished replying.');
+      }
+
+      const assistantMsg: ChatMessage = {
+        id: assistantId,
+        role: 'assistant',
+        content: finalData.answer,
+        parsed: finalData,
+        created_at: assistantCreatedAt,
+        streaming: false,
+      };
+      messagesConvIdRef.current = convId;
 
       if (pathname === '/coach' && convId) {
-        router.replace(`/coach/${convId}`);
+        router.replace(`/coach/${convId}`, { scroll: false });
       }
+
+      void (async () => {
+        await saveMessage(assistantMsg, convId);
+        if (finalData.tasks && finalData.tasks.length > 0) {
+          await saveTasks(finalData.tasks, convId);
+        }
+        await touchConversation(convId);
+        bumpConversations();
+      })();
     } catch (err) {
+      setMessages((prev) => prev.filter((m) => m.id !== assistantId));
       const hint =
         err instanceof Error
           ? err.message
@@ -383,7 +573,8 @@ export default function CoachChat({
                   )}
                 </div>
               ))}
-              {loading && (
+              {loading &&
+                !messages.some((m) => m.role === 'assistant' && m.streaming) && (
                 <div className="flex gap-3">
                   <div className="shrink-0 flex h-8 w-8 items-center justify-center rounded-full bg-ink-900 text-[10px] font-bold text-white">
                     TiB
@@ -488,6 +679,13 @@ function AssistantMessage({
   copiedId: string | null;
 }) {
   const { parsed } = message;
+  const isStreaming = Boolean(message.streaming);
+  const finishingStructured = Boolean(message.finishingStructured);
+  const hasStructuredBlocks =
+    Boolean(parsed?.rag_sources?.length) ||
+    Boolean(parsed?.next_steps?.length) ||
+    Boolean(parsed?.tasks?.length) ||
+    Boolean(parsed?.resources?.length);
 
   return (
     <div className="flex gap-3 px-0.5">
@@ -496,12 +694,30 @@ function AssistantMessage({
       </div>
       <div className="min-w-0 flex-1 space-y-4 pt-0.5">
         <div>
-          <p className="text-[15px] leading-relaxed text-ink-900 whitespace-pre-wrap">
-            {message.content}
-          </p>
+          {message.streamStatus && !message.content && (
+            <div className="flex items-center gap-2 text-ink-400 mb-2">
+              <Loader2 size={14} className="animate-spin" />
+              <span className="text-sm">{message.streamStatus}</span>
+            </div>
+          )}
+          {(message.content || !message.streamStatus) && (
+            <p className="text-[15px] leading-relaxed text-ink-900 whitespace-pre-wrap">
+              {message.content}
+              {isStreaming && message.content && (
+                <span className="inline-block w-0.5 h-4 ml-0.5 align-text-bottom bg-ink-400 animate-pulse" />
+              )}
+            </p>
+          )}
         </div>
 
-        {parsed?.rag_sources && parsed.rag_sources.length > 0 && (
+        {finishingStructured && !hasStructuredBlocks && (
+          <div className="flex items-center gap-2 text-ink-400 text-sm py-1">
+            <Loader2 size={14} className="animate-spin shrink-0" />
+            <span>Adding next steps, tasks &amp; sources…</span>
+          </div>
+        )}
+
+        {!isStreaming && !finishingStructured && parsed?.rag_sources && parsed.rag_sources.length > 0 && (
           <div className="rounded-2xl bg-amber-50/80 border border-amber-100 p-4">
             <div className="mb-3 flex items-center gap-2">
               <FileText size={14} className="text-amber-700" />
@@ -539,7 +755,7 @@ function AssistantMessage({
           </div>
         )}
 
-        {parsed?.next_steps && parsed.next_steps.length > 0 && (
+        {!isStreaming && !finishingStructured && parsed?.next_steps && parsed.next_steps.length > 0 && (
           <div className="rounded-2xl border border-black/[0.06] bg-[#fafafa] p-4">
             <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-400">
               Next steps
@@ -557,7 +773,7 @@ function AssistantMessage({
           </div>
         )}
 
-        {parsed?.tasks && parsed.tasks.length > 0 && (
+        {!isStreaming && !finishingStructured && parsed?.tasks && parsed.tasks.length > 0 && (
           <div className="rounded-2xl border border-teal-100 bg-teal-50/80 p-4">
             <div className="mb-3 flex items-center gap-2">
               <CheckSquare size={14} className="text-teal-600" />
@@ -581,7 +797,7 @@ function AssistantMessage({
           </div>
         )}
 
-        {parsed?.resources && parsed.resources.length > 0 && (
+        {!isStreaming && !finishingStructured && parsed?.resources && parsed.resources.length > 0 && (
           <div className="space-y-2">
             <h4 className="text-xs font-semibold uppercase tracking-wide text-ink-400">
               More from TiB

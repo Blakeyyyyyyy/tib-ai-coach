@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { createSignedPdfUrl } from '@/lib/rag-storage-path';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 
 const UUID_RE =
@@ -72,7 +73,7 @@ export async function GET(request: NextRequest) {
 
   const { data: row, error } = await admin
     .from('knowledge_chunks')
-    .select('metadata')
+    .select('metadata, source_title')
     .eq('id', chunkId)
     .maybeSingle();
 
@@ -103,14 +104,53 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const { data: signed, error: signErr } = await admin.storage
-    .from(bucket)
-    .createSignedUrl(objectPath, SIGNED_TTL);
+  const resolved = await createSignedPdfUrl(
+    admin,
+    bucket,
+    objectPath,
+    SIGNED_TTL,
+    row?.source_title
+  );
 
-  if (signErr || !signed?.signedUrl) {
-    console.error('createSignedUrl:', signErr, { bucket, objectPath });
-    return NextResponse.json({ error: 'Could not open file' }, { status: 502 });
+  if (!resolved) {
+    console.error('createSignedPdfUrl failed', {
+      bucket,
+      objectPath,
+      source_title: row?.source_title,
+    });
+    return NextResponse.json(
+      {
+        error: 'Could not open file',
+        hint:
+          'The PDF may have been renamed or removed from Storage. Check the Rag bucket for this file, then run: npm run ingest:storage',
+      },
+      { status: 502 }
+    );
   }
 
-  return NextResponse.redirect(signed.signedUrl);
+  if (resolved.resolvedPath !== objectPath) {
+    console.warn('PDF path resolved via fallback', {
+      stored: objectPath,
+      resolved: resolved.resolvedPath,
+    });
+    // Self-heal chunk metadata after Storage rename (e.g. ™ removed from filename)
+    const { error: healErr } = await admin
+      .from('knowledge_chunks')
+      .update({
+        metadata: {
+          ...meta,
+          storage_bucket: bucket,
+          storage_path: resolved.resolvedPath,
+        },
+      })
+      .contains('metadata', {
+        storage_path: objectPath,
+        storage_bucket: bucket,
+      });
+    if (healErr) {
+      console.warn('knowledge_chunks metadata heal:', healErr.message);
+    }
+  }
+
+  return NextResponse.redirect(resolved.signedUrl);
 }

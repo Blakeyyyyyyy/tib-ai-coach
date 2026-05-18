@@ -13,13 +13,23 @@ import { config } from 'dotenv';
 import { resolve } from 'path';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { embedTexts } from '../src/lib/ai/openai-embed';
+import { healStaleStoragePaths } from '../src/lib/heal-storage-paths';
+import {
+  listBucketPdfPaths,
+  normalizeStorageMatchKey,
+} from '../src/lib/rag-storage-path';
 
 config({ path: resolve(process.cwd(), '.env') });
 
 const BUCKET = process.env.RAG_STORAGE_BUCKET ?? 'Rag';
-const CHUNK_SIZE = 2200;
-const CHUNK_OVERLAP = 200;
+/** ~250 tokens — better for exact quotes and precise PDF matching */
+const CHUNK_SIZE = parseInt(process.env.RAG_CHUNK_SIZE ?? '1000', 10) || 1000;
+const CHUNK_OVERLAP = parseInt(process.env.RAG_CHUNK_OVERLAP ?? '200', 10) || 200;
 const EMBED_BATCH = 24;
+
+function formatChunkForStorage(documentTitle: string, body: string): string {
+  return `Document: ${documentTitle}\n\n${body.trim()}`;
+}
 
 function chunkText(text: string): string[] {
   const normalized = text.replace(/\r\n/g, '\n').replace(/\u0000/g, '').trim();
@@ -49,25 +59,33 @@ function displayTitle(filename: string): string {
   return base.replace(/\s+/g, ' ').trim() || filename;
 }
 
-async function listPdfPaths(
-  client: SupabaseClient,
-  prefix: string
-): Promise<string[]> {
-  const { data, error } = await client.storage.from(BUCKET).list(prefix, {
-    limit: 1000,
-    sortBy: { column: 'name', order: 'asc' },
-  });
-  if (error) throw error;
-  const out: string[] = [];
-  for (const item of data || []) {
-    const path = prefix ? `${prefix}/${item.name}` : item.name;
-    if (item.metadata === null) {
-      out.push(...(await listPdfPaths(client, path)));
-    } else if (item.name.toLowerCase().endsWith('.pdf')) {
-      out.push(path);
-    }
+/** Remove chunks for this PDF and any stale paths (e.g. old ™ filename) for the same document. */
+async function deleteChunksForPdf(
+  admin: SupabaseClient,
+  canonicalPath: string
+) {
+  const norm = normalizeStorageMatchKey(canonicalPath);
+  const paths = new Set<string>([canonicalPath]);
+
+  const { data: rows } = await admin
+    .from('knowledge_chunks')
+    .select('metadata')
+    .contains('metadata', { storage_bucket: BUCKET });
+
+  for (const row of rows || []) {
+    const meta = row.metadata as Record<string, unknown> | null;
+    const p =
+      typeof meta?.storage_path === 'string' ? meta.storage_path.trim() : '';
+    if (p && normalizeStorageMatchKey(p) === norm) paths.add(p);
   }
-  return out;
+
+  for (const p of paths) {
+    const { error } = await admin
+      .from('knowledge_chunks')
+      .delete()
+      .contains('metadata', { storage_path: p, storage_bucket: BUCKET });
+    if (error) console.error('  delete old chunks:', p, error.message);
+  }
 }
 
 async function main() {
@@ -83,13 +101,21 @@ async function main() {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const paths = await listPdfPaths(admin, '');
+  console.log('Checking for stale storage_path metadata (™ renames, etc.)…');
+  const heal = await healStaleStoragePaths(admin, BUCKET);
+  if (heal.healed.length > 0) {
+    for (const h of heal.healed) {
+      console.log(`  healed ${h.chunkRows} chunks: ${h.from} → ${h.to}`);
+    }
+  }
+
+  const paths = await listBucketPdfPaths(admin, BUCKET);
   if (paths.length === 0) {
     console.log(`No PDFs found in bucket "${BUCKET}".`);
     return;
   }
 
-  console.log(`Found ${paths.length} PDF(s) in "${BUCKET}".`);
+  console.log(`\nFound ${paths.length} PDF(s) in "${BUCKET}".`);
 
   for (const objectPath of paths) {
     const title = displayTitle(objectPath.split('/').pop() || objectPath);
@@ -108,19 +134,14 @@ async function main() {
       b: Buffer
     ) => Promise<{ text: string }>;
     const { text } = await pdfParse(buf);
-    const chunks = chunkText(text);
+    const rawChunks = chunkText(text);
+    const chunks = rawChunks.map((c) => formatChunkForStorage(title, c));
     if (chunks.length === 0) {
       console.log('  no extractable text, skip');
       continue;
     }
 
-    const { error: delErr } = await admin
-      .from('knowledge_chunks')
-      .delete()
-      .contains('metadata', { storage_path: objectPath, storage_bucket: BUCKET });
-    if (delErr) {
-      console.error('  delete old chunks:', delErr.message);
-    }
+    await deleteChunksForPdf(admin, objectPath);
 
     for (let i = 0; i < chunks.length; i += EMBED_BATCH) {
       const batch = chunks.slice(i, i + EMBED_BATCH);

@@ -1,12 +1,4 @@
-'use client';
-
-import { useParams } from 'next/navigation';
-import CoachChat from '@/components/coach/CoachChat';
-
+/** Chat UI is rendered in `coach/layout.tsx` so URL changes do not remount the thread. */
 export default function CoachThreadPage() {
-  const params = useParams();
-  const raw = params.conversationId;
-  const conversationId = typeof raw === 'string' ? raw : null;
-
-  return <CoachChat conversationId={conversationId} />;
+  return null;
 }

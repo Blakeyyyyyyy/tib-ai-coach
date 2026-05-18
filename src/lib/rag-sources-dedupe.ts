@@ -20,7 +20,7 @@ function citationDedupeKey(s: RagSource): string {
  */
 export function dedupeRagSourcesForDisplay(
   sources: RagSource[],
-  maxLinks = 24
+  maxLinks = 3
 ): RagSource[] {
   const out: RagSource[] = [];
   const seen = new Set<string>();

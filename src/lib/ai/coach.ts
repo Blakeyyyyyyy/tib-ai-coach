@@ -36,26 +36,73 @@ Rules:
 - "next_steps" should contain 2-4 practical steps ordered by priority
 - "tasks" should contain exactly 3 tasks when breaking down a goal; fewer for simple questions
 - "resources" should contain 0-2 relevant TiB resources (link to tradiesinbusiness.com.au/members)
+- When INTERNAL KNOWLEDGE BASE excerpts are provided, ground your answer and next_steps in those excerpts only; do not name a different TiB PDF than the one in the excerpts unless it appears there
+- If the user quotes exact wording from a provided excerpt, treat that excerpt's Source line as the authoritative document
 - Always start with the easiest, most momentum-building task first
 - Keep language warm and direct — no corporate jargon, no filler phrases
 - Focus on what the user can do THIS WEEK, not someday`;
 
-export function parseAIResponse(raw: string): AIResponse {
-  try {
-    // Try to extract JSON from the response
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
-      return {
-        answer: parsed.answer || raw,
-        next_steps: parsed.next_steps || [],
-        tasks: parsed.tasks || [],
-        resources: parsed.resources || [],
-      };
+/** Show coach "answer" text while Claude streams JSON (best-effort). */
+export function extractStreamingAnswer(partial: string): string {
+  const key = '"answer"';
+  const start = partial.indexOf(key);
+  if (start === -1) return '';
+  const colon = partial.indexOf(':', start + key.length);
+  if (colon === -1) return '';
+  let i = colon + 1;
+  while (i < partial.length && /\s/.test(partial[i]!)) i++;
+  if (partial[i] !== '"') return '';
+  i++;
+  let out = '';
+  while (i < partial.length) {
+    const c = partial[i]!;
+    if (c === '\\' && i + 1 < partial.length) {
+      const esc = partial[i + 1]!;
+      if (esc === 'n') out += '\n';
+      else if (esc === 't') out += '\t';
+      else if (esc === 'r') out += '\r';
+      else out += esc;
+      i += 2;
+      continue;
     }
-  } catch {
-    // If JSON parsing fails, return the raw text as the answer
+    if (c === '"') break;
+    out += c;
+    i++;
   }
+  return out;
+}
+
+/** True once the model has started fields after `answer` (tasks, steps, etc.). */
+export function coachJsonPastAnswerField(partial: string): boolean {
+  return /"tasks"\s*:|"next_steps"\s*:|"resources"\s*:/.test(partial);
+}
+
+/** Parse full coach JSON when the stream buffer is complete (before `done` event). */
+export function tryParseStreamingCoachJson(raw: string): AIResponse | null {
+  const jsonMatch = raw.trim().match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return null;
+  try {
+    const parsed = JSON.parse(jsonMatch[0]) as {
+      answer?: string;
+      next_steps?: string[];
+      tasks?: AIResponse['tasks'];
+      resources?: AIResponse['resources'];
+    };
+    if (typeof parsed.answer !== 'string' || !parsed.answer) return null;
+    return {
+      answer: parsed.answer,
+      next_steps: Array.isArray(parsed.next_steps) ? parsed.next_steps : [],
+      tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
+      resources: Array.isArray(parsed.resources) ? parsed.resources : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function parseAIResponse(raw: string): AIResponse {
+  const early = tryParseStreamingCoachJson(raw);
+  if (early) return early;
 
   return {
     answer: raw,
