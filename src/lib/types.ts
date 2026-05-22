@@ -50,12 +50,14 @@ export interface Resource {
   link: string;
 }
 
-/** Citation to a Storage PDF (`pdf_url` is usually `/api/rag/pdf?chunk_id=…` so links stay valid after save). */
+/** Citation from RAG — PDF proxy and/or Vimeo/video link. */
 export interface RagSource {
   chunk_id: string;
   title: string;
   pdf_url: string | null;
   page_url?: string | null;
+  video_url?: string | null;
+  source_type?: 'pdf' | 'video_transcript';
   storage_bucket?: string | null;
   storage_path?: string | null;
 }

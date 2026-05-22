@@ -728,8 +728,9 @@ function AssistantMessage({
             <ul className="space-y-2">
               {dedupeRagSourcesForDisplay(parsed.rag_sources).map((src) => {
                 const href =
-                  src.pdf_url ||
+                  src.video_url ||
                   src.page_url ||
+                  src.pdf_url ||
                   (src.chunk_id
                     ? `/api/rag/pdf?chunk_id=${encodeURIComponent(src.chunk_id)}`
                     : null);

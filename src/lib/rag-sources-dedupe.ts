@@ -2,10 +2,15 @@ import type { RagSource } from '@/lib/types';
 
 /** Prefer stable Storage identity; else URL without query (signed URLs differ per token). */
 function citationDedupeKey(s: RagSource): string {
+  if (s.source_type === 'video_transcript' && s.video_url) {
+    const q = s.video_url.indexOf('?');
+    const base = q === -1 ? s.video_url : s.video_url.slice(0, q);
+    return `video:${base}`;
+  }
   if (s.storage_bucket && s.storage_path) {
     return `doc:${s.storage_bucket}\0${s.storage_path}`;
   }
-  const raw = (s.pdf_url || s.page_url || '').trim();
+  const raw = (s.video_url || s.pdf_url || s.page_url || '').trim();
   if (raw) {
     const q = raw.indexOf('?');
     const base = q === -1 ? raw : raw.slice(0, q);

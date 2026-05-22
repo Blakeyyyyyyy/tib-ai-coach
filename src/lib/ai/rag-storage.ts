@@ -1,4 +1,5 @@
 import type { RagSource } from '@/lib/types';
+import { ragSourceFromRow, isVideoTranscriptRow } from '@/lib/rag-source-from-row';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { embedQuery } from '@/lib/ai/openai-embed';
 import { rerankPassagesWithOpenAI } from '@/lib/ai/rerank-openai';
@@ -36,6 +37,15 @@ function metaString(m: Record<string, unknown> | null, key: string): string | nu
 }
 
 function rowDocKey(row: MatchRow): string {
+  if (isVideoTranscriptRow(row.metadata)) {
+    const url = metaString(row.metadata, 'video_url');
+    if (url) {
+      const q = url.indexOf('?');
+      return `video:\0${q === -1 ? url : url.slice(0, q)}`;
+    }
+    const name = metaString(row.metadata, 'video_name');
+    if (name) return `video:\0${name}`;
+  }
   const bucket =
     metaString(row.metadata, 'storage_bucket') ??
     process.env.RAG_STORAGE_BUCKET ??
@@ -46,6 +56,14 @@ function rowDocKey(row: MatchRow): string {
 }
 
 function rowTitle(row: MatchRow): string {
+  if (isVideoTranscriptRow(row.metadata)) {
+    const name =
+      metaString(row.metadata, 'video_name') || row.source_title || 'Video';
+    const start = metaString(row.metadata, 'start_time');
+    const end = metaString(row.metadata, 'end_time');
+    if (start && end) return `${name} (${start}–${end})`;
+    return name;
+  }
   const objectPath = metaString(row.metadata, 'storage_path');
   return (
     row.source_title ||
@@ -85,12 +103,23 @@ function selectChunksFromRerank(
     add(row);
   }
 
-  // Pass 2: more chunks from those documents only
+  // Pass 2: prefer the top-ranked document (long video sessions need several
+  // timestamped segments from the same Vimeo URL, not one chunk per meeting).
+  const primaryDocKey = pick.length > 0 ? rowDocKey(pick[0]) : null;
+  if (primaryDocKey) {
+    for (const idx of order) {
+      if (pick.length >= maxChunks) break;
+      const row = matches[idx];
+      if (!row || rowDocKey(row) !== primaryDocKey) continue;
+      add(row);
+    }
+  }
   for (const idx of order) {
     if (pick.length >= maxChunks) break;
     const row = matches[idx];
     if (!row) continue;
-    if (!allowedDocs.has(rowDocKey(row))) continue;
+    const key = rowDocKey(row);
+    if (!allowedDocs.has(key) || key === primaryDocKey) continue;
     add(row);
   }
 
@@ -388,11 +417,6 @@ async function retrieveStorageRagInner(
   const contextParts: string[] = [];
 
   for (const row of pick) {
-    const bucket =
-      metaString(row.metadata, 'storage_bucket') ??
-      process.env.RAG_STORAGE_BUCKET ??
-      'Rag';
-    const objectPath = metaString(row.metadata, 'storage_path');
     const title = rowTitle(row);
     const docKey = rowDocKey(row);
 
@@ -402,15 +426,7 @@ async function retrieveStorageRagInner(
       sources.length < maxKbLinks
     ) {
       linkedDocKeys.add(docKey);
-      const proxyHref = `/api/rag/pdf?chunk_id=${encodeURIComponent(row.id)}`;
-      sources.push({
-        chunk_id: row.id,
-        title,
-        pdf_url: proxyHref,
-        page_url: proxyHref,
-        storage_bucket: bucket,
-        storage_path: objectPath,
-      });
+      sources.push(ragSourceFromRow(row, title));
     }
 
     contextParts.push(`---\nSource: ${title}\n${row.content.trim()}`);
@@ -425,10 +441,10 @@ async function retrieveStorageRagInner(
 export function ragContextSystemAppendix(contextBlock: string): string {
   return `
 
-INTERNAL KNOWLEDGE BASE (PDF excerpts from TiB materials — use when they genuinely help the answer; do not invent facts not supported here or by general coaching knowledge):
+INTERNAL KNOWLEDGE BASE (PDF excerpts and video transcript segments from TiB materials — use when they genuinely help the answer; do not invent facts not supported here or by general coaching knowledge):
 
 ${contextBlock}
 
 When you lean on these excerpts, keep the same JSON response shape as usual; do not paste raw URLs in "answer" — the app attaches source links separately.
-If passages are marked EXACT PHRASE MATCH, that source is the primary PDF for the user's quote; align next_steps with that document's Source title.`;
+If passages are marked EXACT PHRASE MATCH, that source is the primary material for the user's quote; align next_steps with that passage's Source title (PDF or video).`;
 }
