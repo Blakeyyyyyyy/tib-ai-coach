@@ -226,7 +226,7 @@ export function buildOverlappingChunks(rawTranscript: string): TranscriptChunk[]
 
 export type LineExportItem = {
   video_name: string;
-  video_url: string;
+  video_url?: string;
   start_time?: string;
   end_time?: string;
   text: string;
@@ -248,9 +248,13 @@ export function extractVimeoUrlFromItems(items: LineExportItem[]): string | null
 export function normalizeCaptionExportItems(
   items: LineExportItem[]
 ): LineExportItem[] {
+  const firstUrl = items[0]?.video_url?.trim() ?? '';
   const vimeo =
     extractVimeoUrlFromItems(items) ||
-    (items[0]!.video_url.includes('vimeo.com') ? items[0]!.video_url : null);
+    (firstUrl.includes('vimeo.com') ? firstUrl : null);
+
+  const resolved =
+    vimeo && !vimeo.includes('example.com') ? vimeo : null;
 
   return items
     .filter((c) => {
@@ -260,7 +264,7 @@ export function normalizeCaptionExportItems(
     })
     .map((c) => ({
       ...c,
-      video_url: vimeo ?? c.video_url,
+      video_url: resolved ?? '',
       text: stripCaptionLineNumber(c.text),
     }));
 }
@@ -294,7 +298,7 @@ export function mergeLineExportToChunks(
   text: string;
 }[] {
   const video_name = items[0]!.video_name.trim();
-  const video_url = items[0]!.video_url.trim();
+  const video_url = items[0]!.video_url?.trim() ?? '';
 
   const captions: CaptionLine[] = items
     .map((c) => {
@@ -334,13 +338,18 @@ export function mergeLineExportToChunks(
   }
   if (buf.length) flush(false);
 
-  return out.map((c) => ({
-    video_name,
-    video_url,
-    start_time: toMmSs(c.startSec),
-    end_time: toMmSs(c.endSec),
-    text: c.text,
-  }));
+  const url =
+    video_url && !video_url.includes('example.com') ? video_url : '';
+
+  return out.map((c) => {
+    const item = {
+      video_name,
+      start_time: toMmSs(c.startSec),
+      end_time: toMmSs(c.endSec),
+      text: c.text,
+    };
+    return url ? { ...item, video_url: url } : item;
+  });
 }
 
 export function chunksToExportItems(
@@ -349,16 +358,21 @@ export function chunksToExportItems(
   videoUrl: string
 ): {
   video_name: string;
-  video_url: string;
+  video_url?: string;
   start_time: string;
   end_time: string;
   text: string;
 }[] {
-  return chunks.map((c) => ({
-    video_name: videoName,
-    video_url: videoUrl,
-    start_time: toMmSs(c.startSec),
-    end_time: toMmSs(c.endSec),
-    text: c.text,
-  }));
+  const url = videoUrl?.trim();
+  const hasUrl = !!url && !url.includes('example.com');
+
+  return chunks.map((c) => {
+    const item = {
+      video_name: videoName,
+      start_time: toMmSs(c.startSec),
+      end_time: toMmSs(c.endSec),
+      text: c.text,
+    };
+    return hasUrl ? { ...item, video_url: url } : item;
+  });
 }

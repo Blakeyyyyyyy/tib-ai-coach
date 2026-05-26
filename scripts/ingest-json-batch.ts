@@ -88,6 +88,35 @@ const SKIP = new Set([
   'How to Reduce Cash Flow Stress.json',
   'Marketing to Survive Tough Times.json',
   'Q&A Expert Session with Nicole Davidson.json',
+  'Done With You Session HR System For Success.json',
+  'HR Compliance Essentials for Tradies in Business.json',
+  'How to Work with the Younger Generation with Cal Robinson from Young Gunz.json',
+  'Write Your Sexy Job Ad (Sexy Ad Builder).json',
+  'Overcoming Communication Challenges and Reconnecting with Your Partner with Megs Dixon.json',
+  'Client Avatar.json',
+  'Demo and Q&A Expert Session.json',
+  'Done with You Session  Creating Company Values & Mission Vision Statement.json',
+  'Done With You Session with Nic & Waz.json',
+  'Expert Session with Matt Heighway.json',
+  'Expert Webinar with Joe Pane.json',
+  'Getting the Most Out of the Tradiepreneur Program.json',
+  'HR for Tradies in Business.json',
+  'Influence and Profit Accelerator with Joe Pane.json',
+  'Overcoming Communication Challenges with Your Partner with Megs Dixon.json',
+  'Q&A Expert Webinar.json',
+  'Trade-O with Renee Boardman.json',
+  'Tradiepreneur Financial Dashboard.json',
+  '7 Myths of Systemising your Business with James Brown.json',
+  'Clea Jones on The 9 Mental Roadblocks Stopping You From Being a Content Marketing Rockstar.json',
+  "Done with You Session - Scripts for Sales & Enquiries.json",
+  "Done With You Session Create your 'right now' marketing plan & leads budget.json",
+  'Done with You Session Improve Conversion By Mapping Your Sales Process.json',
+  'Expert Session on Google My Business Local Service Ads with Nicholas Dogulin.json',
+  'Expert Sessions Done with You Screening Questions.json',
+  'One Page Wealth Plan with Jackson Millan.json',
+  'Preparing Your Trade Business for Facebook and Success with Amy Wyhoon.json',
+  'Social Media Scheduling.json',
+  'Turning Your Ideas Into Content with Sam Winch.json',
 ]);
 
 const root = resolve(process.cwd());
@@ -100,7 +129,9 @@ function isReadyForIngest(filePath: string): boolean {
     return (
       Array.isArray(data) &&
       data.length > 0 &&
-      typeof (data[0] as { video_url?: string })?.video_url === 'string'
+      typeof (data[0] as { video_name?: string; text?: string })?.video_name ===
+        'string' &&
+      typeof (data[0] as { text?: string })?.text === 'string'
     );
   } catch {
     return false;

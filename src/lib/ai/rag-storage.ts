@@ -1,5 +1,9 @@
 import type { RagSource } from '@/lib/types';
-import { ragSourceFromRow, isVideoTranscriptRow } from '@/lib/rag-source-from-row';
+import {
+  ragSourceFromRow,
+  isVideoTranscriptRow,
+  videoTranscriptCitationTitle,
+} from '@/lib/rag-source-from-row';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { embedQuery } from '@/lib/ai/openai-embed';
 import { rerankPassagesWithOpenAI } from '@/lib/ai/rerank-openai';
@@ -57,12 +61,7 @@ function rowDocKey(row: MatchRow): string {
 
 function rowTitle(row: MatchRow): string {
   if (isVideoTranscriptRow(row.metadata)) {
-    const name =
-      metaString(row.metadata, 'video_name') || row.source_title || 'Video';
-    const start = metaString(row.metadata, 'start_time');
-    const end = metaString(row.metadata, 'end_time');
-    if (start && end) return `${name} (${start}–${end})`;
-    return name;
+    return videoTranscriptCitationTitle(row.metadata, row.source_title);
   }
   const objectPath = metaString(row.metadata, 'storage_path');
   return (

@@ -26,6 +26,7 @@ import {
 } from '@/lib/ai/coach';
 import { AIResponse, TaskFromAI } from '@/lib/types';
 import { dedupeRagSourcesForDisplay } from '@/lib/rag-sources-dedupe';
+import { citationHrefFromSource } from '@/lib/rag-source-from-row';
 import { useCoachSessions } from '@/contexts/CoachSessionsContext';
 
 interface ChatMessage {
@@ -727,13 +728,7 @@ function AssistantMessage({
             </div>
             <ul className="space-y-2">
               {dedupeRagSourcesForDisplay(parsed.rag_sources).map((src) => {
-                const href =
-                  src.video_url ||
-                  src.page_url ||
-                  src.pdf_url ||
-                  (src.chunk_id
-                    ? `/api/rag/pdf?chunk_id=${encodeURIComponent(src.chunk_id)}`
-                    : null);
+                const href = citationHrefFromSource(src);
                 return (
                   <li key={src.chunk_id} className="text-sm text-amber-950">
                     {href ? (

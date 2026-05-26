@@ -2,7 +2,8 @@
  * Ingest transcript_chunks.json (or similar) into knowledge_chunks.
  *
  * Expected shape per item:
- *   { video_name, video_url, start_time, end_time, text }
+ *   { video_name, text, start_time?, end_time?, video_url? }
+ *   video_url is optional — citations show name + time only when omitted.
  *
  * Run: npm run ingest:json
  */
@@ -20,16 +21,26 @@ const EMBED_BATCH = 24;
 
 type TranscriptChunk = {
   video_name: string;
-  video_url: string;
-  start_time: string;
-  end_time: string;
+  video_url?: string;
+  start_time?: string;
+  end_time?: string;
   text: string;
 };
 
 function formatContent(item: TranscriptChunk): string {
   const title = item.video_name.trim();
   const body = item.text.trim();
-  return `Video: ${title} (${item.start_time}–${item.end_time})\n\n${body}`;
+  const start = item.start_time?.trim();
+  const end = item.end_time?.trim();
+  const time =
+    start && end ? ` (${start}–${end})` : start ? ` (${start})` : '';
+  return `Video: ${title}${time}\n\n${body}`;
+}
+
+function resolveVideoUrl(item: TranscriptChunk): string | null {
+  const u = item.video_url?.trim();
+  if (!u || u.includes('example.com')) return null;
+  return u;
 }
 
 async function main() {
@@ -65,10 +76,7 @@ async function main() {
   }
 
   const valid = items.filter(
-    (item) =>
-      item?.video_name?.trim() &&
-      item?.video_url?.trim() &&
-      item?.text?.trim()
+    (item) => item?.video_name?.trim() && item?.text?.trim()
   );
 
   if (valid.length === 0) {
@@ -97,22 +105,27 @@ async function main() {
     const batch = contents.slice(i, i + EMBED_BATCH);
     const embeddings = await embedTexts(batch, openai);
 
-    const rows = batchItems.map((item, j) => ({
-      content: batch[j]!,
-      embedding: embeddings[j] as unknown as number[],
-      source_title: item.video_name.trim(),
-      source_url: item.video_url.trim(),
-      resource_url: item.video_url.trim(),
-      metadata: {
+    const rows = batchItems.map((item, j) => {
+      const videoUrl = resolveVideoUrl(item);
+      const meta: Record<string, unknown> = {
         source_type: 'video_transcript',
         source_file: sourceFileKey,
         video_name: item.video_name.trim(),
-        video_url: item.video_url.trim(),
-        start_time: item.start_time,
-        end_time: item.end_time,
+        start_time: item.start_time ?? null,
+        end_time: item.end_time ?? null,
         chunk_index: i + j,
-      },
-    }));
+        has_video_url: !!videoUrl,
+      };
+      if (videoUrl) meta.video_url = videoUrl;
+      return {
+        content: batch[j]!,
+        embedding: embeddings[j] as unknown as number[],
+        source_title: item.video_name.trim(),
+        source_url: videoUrl,
+        resource_url: videoUrl,
+        metadata: meta,
+      };
+    });
 
     const { error: insErr } = await admin.from('knowledge_chunks').insert(rows);
     if (insErr) {

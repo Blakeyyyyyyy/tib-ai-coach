@@ -2,10 +2,13 @@ import type { RagSource } from '@/lib/types';
 
 /** Prefer stable Storage identity; else URL without query (signed URLs differ per token). */
 function citationDedupeKey(s: RagSource): string {
-  if (s.source_type === 'video_transcript' && s.video_url) {
-    const q = s.video_url.indexOf('?');
-    const base = q === -1 ? s.video_url : s.video_url.slice(0, q);
-    return `video:${base}`;
+  if (s.source_type === 'video_transcript') {
+    if (s.video_url) {
+      const q = s.video_url.indexOf('?');
+      const base = q === -1 ? s.video_url : s.video_url.slice(0, q);
+      return `video:${base}`;
+    }
+    return `video-name:${s.title.trim().toLowerCase()}`;
   }
   if (s.storage_bucket && s.storage_path) {
     return `doc:${s.storage_bucket}\0${s.storage_path}`;

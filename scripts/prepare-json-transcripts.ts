@@ -98,7 +98,7 @@ function processFile(filePath: string, force: boolean): boolean {
 
   if (isChunkedArray(data)) {
     const lineItems = data.filter(
-      (c) => c?.video_name?.trim() && c?.video_url?.trim() && c?.text?.trim()
+      (c) => c?.video_name?.trim() && c?.text?.trim()
     ) as {
       video_name: string;
       video_url: string;
@@ -117,7 +117,7 @@ function processFile(filePath: string, force: boolean): boolean {
       return true;
     }
 
-    if (!force && data[0]?.video_url) {
+    if (!force && data[0]?.video_name) {
       const avg =
         data.reduce((s, c) => s + (c.text?.length ?? 0), 0) / data.length;
       if (avg >= 120) {
@@ -147,13 +147,6 @@ function processFile(filePath: string, force: boolean): boolean {
     return false;
   }
 
-  if (!videoUrl) {
-    console.error(
-      `  ERROR: ${path.basename(filePath)} — no Vimeo URL (use video_url or url: https://vimeo.com/...)`
-    );
-    return false;
-  }
-
   const displayName = formatDisplayName(videoName.replace(/\.json$/i, ''));
   const chunks = buildOverlappingChunks(transcriptText);
   if (!chunks.length) {
@@ -161,7 +154,12 @@ function processFile(filePath: string, force: boolean): boolean {
     return false;
   }
 
-  const out = chunksToExportItems(chunks, displayName, videoUrl);
+  const out = chunksToExportItems(chunks, displayName, videoUrl ?? '');
+  if (!videoUrl) {
+    console.log(
+      `  note: ${path.basename(filePath)} — no URL; citations will show title only`
+    );
+  }
   fs.writeFileSync(filePath, JSON.stringify(out, null, 2), 'utf8');
   console.log(
     `  OK ${path.basename(filePath)} → ${out.length} chunks (overlap ~${100} chars)`

@@ -20,7 +20,9 @@ export function ragSourceFromRow(
   const sourceType = metaString(meta, 'source_type');
 
   if (sourceType === 'video_transcript') {
-    const baseUrl = metaString(meta, 'video_url');
+    const rawUrl = metaString(meta, 'video_url');
+    const baseUrl =
+      rawUrl && !rawUrl.includes('example.com') ? rawUrl : null;
     const start = metaString(meta, 'start_time');
     const videoUrl =
       baseUrl && start ? vimeoUrlAtTime(baseUrl, start) : baseUrl;
@@ -55,7 +57,50 @@ export function ragSourceFromRow(
 export function isVideoTranscriptRow(
   metadata: Record<string, unknown> | null
 ): boolean {
-  return metaString(metadata, 'source_type') === 'video_transcript';
+  if (metaString(metadata, 'source_type') === 'video_transcript') return true;
+  const hasVideoName = !!metaString(metadata, 'video_name');
+  const hasStorage = !!metaString(metadata, 'storage_path');
+  const sourceFile = metaString(metadata, 'source_file');
+  return (
+    hasVideoName &&
+    !hasStorage &&
+    (!!sourceFile?.endsWith('.json') || metaString(metadata, 'start_time') != null)
+  );
+}
+
+/** Link for Knowledge base UI — video only when URL exists; PDF uses storage proxy. */
+export function citationHrefFromSource(src: RagSource): string | null {
+  if (src.source_type === 'video_transcript') {
+    return src.video_url?.trim() || null;
+  }
+  if (src.source_type === 'pdf') {
+    return src.pdf_url?.trim() || src.page_url?.trim() || null;
+  }
+  if (src.video_url?.trim()) return src.video_url.trim();
+  if (src.pdf_url?.trim()) return src.pdf_url.trim();
+  return null;
+}
+
+/** True when chunk has a real Vimeo (or other) link for citations. */
+export function hasVideoCitationUrl(
+  metadata: Record<string, unknown> | null
+): boolean {
+  const raw = metaString(metadata, 'video_url');
+  return !!raw && !raw.includes('example.com');
+}
+
+/** Citation label: video_name + timestamp range (with or without URL). */
+export function videoTranscriptCitationTitle(
+  metadata: Record<string, unknown> | null,
+  sourceTitle: string
+): string {
+  const name =
+    metaString(metadata, 'video_name') || sourceTitle.trim() || 'Video';
+  const start = metaString(metadata, 'start_time');
+  const end = metaString(metadata, 'end_time');
+  if (start && end) return `${name} (${start}–${end})`;
+  if (start) return `${name} (${start})`;
+  return name;
 }
 
 /** Vimeo deep link at transcript start (e.g. #t=90s). */
