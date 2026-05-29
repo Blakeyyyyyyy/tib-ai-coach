@@ -6,7 +6,7 @@ import {
 } from '@/lib/rag-source-from-row';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { embedQuery } from '@/lib/ai/openai-embed';
-import { rerankPassagesWithOpenAI } from '@/lib/ai/rerank-openai';
+import { rerankPassages } from '@/lib/ai/rerank';
 import { fetchFtsMatches } from '@/lib/ai/rag-fts-search';
 import {
   PHRASE_MATCH_SIMILARITY,
@@ -347,11 +347,7 @@ async function retrieveStorageRagInner(
   let order: number[];
   const dropSet = new Set<number>();
   try {
-    const reranked = await rerankPassagesWithOpenAI(
-      userQuery,
-      passages,
-      openaiKey
-    );
+    const reranked = await rerankPassages(userQuery, passages);
     order = reranked.order;
     reranked.drop.forEach((d) => dropSet.add(d));
   } catch (e) {

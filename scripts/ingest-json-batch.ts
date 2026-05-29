@@ -144,7 +144,6 @@ function run(file: string): void {
     cwd: root,
     stdio: 'inherit',
     env: process.env,
-    shell: false,
   });
 }
 

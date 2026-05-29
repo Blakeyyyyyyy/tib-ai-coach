@@ -292,7 +292,7 @@ export function mergeLineExportToChunks(
   items: LineExportItem[]
 ): {
   video_name: string;
-  video_url: string;
+  video_url?: string;
   start_time: string;
   end_time: string;
   text: string;

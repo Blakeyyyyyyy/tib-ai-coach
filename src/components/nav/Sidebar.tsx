@@ -13,8 +13,9 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  Shield,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import { useSidebar } from '@/contexts/SidebarContext';
@@ -31,7 +32,22 @@ export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const { collapsed, toggle } = useSidebar();
+
+  useEffect(() => {
+    fetch('/api/admin/session')
+      .then((res) => res.json())
+      .then((json: { isAdmin?: boolean }) => setIsAdmin(Boolean(json.isAdmin)))
+      .catch(() => setIsAdmin(false));
+  }, []);
+
+  const allNavItems = [
+    ...navItems,
+    ...(isAdmin
+      ? [{ href: '/admin', label: 'Admin', icon: Shield }]
+      : []),
+  ];
 
   const handleSignOut = async () => {
     const supabase = createClient();
@@ -76,7 +92,7 @@ export default function Sidebar() {
 
         {/* Nav Links */}
         <nav className={`flex-1 pt-4 space-y-0.5 ${collapsed ? 'px-2' : 'px-3'}`}>
-          {navItems.map((item) => {
+          {allNavItems.map((item) => {
             const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
             const Icon = item.icon;
             return (
@@ -169,7 +185,7 @@ export default function Sidebar() {
             </Link>
 
             <nav className="flex-1 px-3 pt-4 space-y-0.5">
-              {navItems.map((item) => {
+              {allNavItems.map((item) => {
                 const isActive = pathname === item.href;
                 const Icon = item.icon;
                 return (

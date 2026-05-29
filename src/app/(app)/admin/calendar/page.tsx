@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import type { Announcement } from '@/lib/types';
-import { ArrowLeft, Megaphone, Pencil, Plus, Trash2 } from 'lucide-react';
+import type { CalendarEvent } from '@/lib/types';
+import { ArrowLeft, Calendar, Pencil, Plus, Star, Trash2 } from 'lucide-react';
 
 function toLocalDatetimeValue(iso: string | null): string {
   if (!iso) return '';
@@ -15,19 +15,17 @@ function toLocalDatetimeValue(iso: string | null): string {
 
 function emptyForm() {
   return {
-    tag: 'Event',
     title: '',
-    summary: '',
     description: '',
     event_date: '',
-    starts_at: '',
-    ends_at: '',
-    published: false,
+    location: '',
+    event_url: '',
+    is_featured: false,
   };
 }
 
-export default function AdminAnnouncementsPage() {
-  const [rows, setRows] = useState<Announcement[]>([]);
+export default function AdminCalendarPage() {
+  const [rows, setRows] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -37,19 +35,19 @@ export default function AdminAnnouncementsPage() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const res = await fetch('/api/admin/announcements');
+      const res = await fetch('/api/admin/calendar-events');
       const json = (await res.json()) as {
-        announcements?: Announcement[];
+        events?: CalendarEvent[];
         error?: string;
       };
       if (!res.ok) {
-        setError(json.error ?? 'Could not load');
+        setError(json.error ?? 'Could not load events');
         setRows([]);
         return;
       }
-      setRows(json.announcements ?? []);
+      setRows(json.events ?? []);
     } catch {
-      setError('Could not load announcements');
+      setError('Could not load events');
       setRows([]);
     } finally {
       setLoading(false);
@@ -65,17 +63,15 @@ export default function AdminAnnouncementsPage() {
     setForm(emptyForm());
   };
 
-  const startEdit = (a: Announcement) => {
-    setEditingId(a.id);
+  const startEdit = (event: CalendarEvent) => {
+    setEditingId(event.id);
     setForm({
-      tag: a.tag,
-      title: a.title,
-      summary: a.summary ?? '',
-      description: a.description ?? '',
-      event_date: toLocalDatetimeValue(a.event_date),
-      starts_at: toLocalDatetimeValue(a.starts_at),
-      ends_at: toLocalDatetimeValue(a.ends_at),
-      published: a.published,
+      title: event.title,
+      description: event.description ?? '',
+      event_date: toLocalDatetimeValue(event.event_date),
+      location: event.location ?? '',
+      event_url: event.event_url ?? '',
+      is_featured: event.is_featured,
     });
   };
 
@@ -85,14 +81,14 @@ export default function AdminAnnouncementsPage() {
     setError(null);
     try {
       const payload = {
-        tag: form.tag.trim() || 'Event',
         title: form.title.trim(),
-        summary: form.summary.trim() || null,
         description: form.description.trim() || null,
-        event_date: form.event_date ? new Date(form.event_date).toISOString() : null,
-        starts_at: form.starts_at ? new Date(form.starts_at).toISOString() : null,
-        ends_at: form.ends_at ? new Date(form.ends_at).toISOString() : null,
-        published: form.published,
+        event_date: form.event_date
+          ? new Date(form.event_date).toISOString()
+          : null,
+        location: form.location.trim() || null,
+        event_url: form.event_url.trim() || null,
+        is_featured: form.is_featured,
       };
 
       if (!payload.title) {
@@ -100,11 +96,16 @@ export default function AdminAnnouncementsPage() {
         setSaving(false);
         return;
       }
+      if (!payload.event_date) {
+        setError('Event date is required');
+        setSaving(false);
+        return;
+      }
 
       const url =
         editingId === null
-          ? '/api/admin/announcements'
-          : `/api/admin/announcements/${editingId}`;
+          ? '/api/admin/calendar-events'
+          : `/api/admin/calendar-events/${editingId}`;
       const method = editingId === null ? 'POST' : 'PATCH';
 
       const res = await fetch(url, {
@@ -129,10 +130,10 @@ export default function AdminAnnouncementsPage() {
   };
 
   const remove = async (id: string) => {
-    if (!confirm('Delete this announcement?')) return;
+    if (!confirm('Delete this event?')) return;
     setError(null);
     try {
-      const res = await fetch(`/api/admin/announcements/${id}`, {
+      const res = await fetch(`/api/admin/calendar-events/${id}`, {
         method: 'DELETE',
       });
       const json = (await res.json()) as { error?: string };
@@ -160,12 +161,11 @@ export default function AdminAnnouncementsPage() {
       <div className="flex items-start justify-between gap-4 mb-8">
         <div>
           <h1 className="text-2xl font-semibold text-ink-900 flex items-center gap-2">
-            <Megaphone className="text-brand-500" size={28} />
-            Announcements
+            <Calendar className="text-brand-500" size={28} />
+            Calendar events
           </h1>
           <p className="text-sm text-ink-500 mt-1">
-            Published items appear as a popup when users open the app (once per
-            item until they dismiss it).
+            Events appear on the Calendar page for all logged-in users.
           </p>
         </div>
         <button
@@ -190,20 +190,8 @@ export default function AdminAnnouncementsPage() {
           className="rounded-xl border border-ink-100 bg-surface p-6 shadow-sm space-y-4"
         >
           <h2 className="text-lg font-semibold text-ink-900">
-            {editingId ? 'Edit announcement' : 'Create announcement'}
+            {editingId ? 'Edit event' : 'Create event'}
           </h2>
-
-          <div>
-            <label className="block text-sm font-medium text-ink-700 mb-1">
-              Tag / label
-            </label>
-            <input
-              className="w-full rounded-lg border border-ink-200 px-3 py-2 text-sm text-ink-900 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
-              value={form.tag}
-              onChange={(e) => setForm((f) => ({ ...f, tag: e.target.value }))}
-              placeholder="Event, News, Workshop…"
-            />
-          </div>
 
           <div>
             <label className="block text-sm font-medium text-ink-700 mb-1">
@@ -214,19 +202,47 @@ export default function AdminAnnouncementsPage() {
               className="w-full rounded-lg border border-ink-200 px-3 py-2 text-sm text-ink-900 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
               value={form.title}
               onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-              placeholder="Short headline"
+              placeholder="Workshop title"
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-ink-700 mb-1">
-              Summary
+              Event date & time <span className="text-red-600">*</span>
+            </label>
+            <input
+              type="datetime-local"
+              required
+              className="w-full rounded-lg border border-ink-200 px-3 py-2 text-sm text-ink-900 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+              value={form.event_date}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, event_date: e.target.value }))
+              }
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-ink-700 mb-1">
+              Location
             </label>
             <input
               className="w-full rounded-lg border border-ink-200 px-3 py-2 text-sm text-ink-900 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
-              value={form.summary}
-              onChange={(e) => setForm((f) => ({ ...f, summary: e.target.value }))}
-              placeholder="One line detail"
+              value={form.location}
+              onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
+              placeholder="Online / Sydney / etc."
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-ink-700 mb-1">
+              Registration URL
+            </label>
+            <input
+              type="url"
+              className="w-full rounded-lg border border-ink-200 px-3 py-2 text-sm text-ink-900 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+              value={form.event_url}
+              onChange={(e) => setForm((f) => ({ ...f, event_url: e.target.value }))}
+              placeholder="https://..."
             />
           </div>
 
@@ -241,66 +257,22 @@ export default function AdminAnnouncementsPage() {
               onChange={(e) =>
                 setForm((f) => ({ ...f, description: e.target.value }))
               }
-              placeholder="Longer copy for the popup"
+              placeholder="What is this event about?"
             />
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-1">
-            <div>
-              <label className="block text-sm font-medium text-ink-700 mb-1">
-                Event date & time
-              </label>
-              <input
-                type="datetime-local"
-                className="w-full rounded-lg border border-ink-200 px-3 py-2 text-sm text-ink-900 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
-                value={form.event_date}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, event_date: e.target.value }))
-                }
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-ink-700 mb-1">
-                Show from
-              </label>
-              <input
-                type="datetime-local"
-                className="w-full rounded-lg border border-ink-200 px-3 py-2 text-sm text-ink-900 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
-                value={form.starts_at}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, starts_at: e.target.value }))
-                }
-              />
-              <p className="text-xs text-ink-400 mt-1">
-                Leave empty when publishing to start showing immediately.
-              </p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-ink-700 mb-1">
-                Hide after (optional)
-              </label>
-              <input
-                type="datetime-local"
-                className="w-full rounded-lg border border-ink-200 px-3 py-2 text-sm text-ink-900 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
-                value={form.ends_at}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, ends_at: e.target.value }))
-                }
-              />
-            </div>
           </div>
 
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
-              checked={form.published}
+              checked={form.is_featured}
               onChange={(e) =>
-                setForm((f) => ({ ...f, published: e.target.checked }))
+                setForm((f) => ({ ...f, is_featured: e.target.checked }))
               }
               className="rounded border-ink-300 text-brand-600 focus:ring-brand-500"
             />
-            <span className="text-sm font-medium text-ink-800">
-              Published (visible to users)
+            <span className="text-sm font-medium text-ink-800 flex items-center gap-1">
+              <Star size={14} className="text-brand-500" />
+              Featured event
             </span>
           </label>
 
@@ -326,38 +298,35 @@ export default function AdminAnnouncementsPage() {
 
         <div className="rounded-xl border border-ink-100 bg-surface overflow-hidden shadow-sm">
           <div className="border-b border-ink-100 px-4 py-3 bg-ink-50/80">
-            <h3 className="text-sm font-semibold text-ink-800">All items</h3>
+            <h3 className="text-sm font-semibold text-ink-800">All events</h3>
           </div>
           {loading ? (
             <p className="p-6 text-sm text-ink-500">Loading…</p>
           ) : rows.length === 0 ? (
-            <p className="p-6 text-sm text-ink-500">No announcements yet.</p>
+            <p className="p-6 text-sm text-ink-500">No events yet.</p>
           ) : (
             <ul className="divide-y divide-ink-100 max-h-[70vh] overflow-y-auto">
-              {rows.map((a) => (
+              {rows.map((event) => (
                 <li
-                  key={a.id}
+                  key={event.id}
                   className="px-4 py-3 flex items-start justify-between gap-3 hover:bg-ink-50/50"
                 >
                   <div className="min-w-0">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-brand-700">
-                      {a.tag}
-                    </span>
-                    <p className="font-medium text-ink-900 truncate">{a.title}</p>
+                    <p className="font-medium text-ink-900 truncate">{event.title}</p>
                     <p className="text-xs text-ink-500 mt-0.5">
-                      {a.published ? (
-                        <span className="text-teal-600">Published</span>
-                      ) : (
-                        <span className="text-ink-400">Draft</span>
+                      {new Date(event.event_date).toLocaleString('en-AU')}
+                      {event.is_featured && (
+                        <>
+                          {' · '}
+                          <span className="text-brand-600">Featured</span>
+                        </>
                       )}
-                      {' · '}
-                      {new Date(a.created_at).toLocaleString()}
                     </p>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <button
                       type="button"
-                      onClick={() => startEdit(a)}
+                      onClick={() => startEdit(event)}
                       className="p-2 rounded-lg text-ink-500 hover:bg-ink-100 hover:text-ink-800"
                       aria-label="Edit"
                     >
@@ -365,7 +334,7 @@ export default function AdminAnnouncementsPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => remove(a.id)}
+                      onClick={() => remove(event.id)}
                       className="p-2 rounded-lg text-ink-400 hover:bg-red-50 hover:text-red-700"
                       aria-label="Delete"
                     >
