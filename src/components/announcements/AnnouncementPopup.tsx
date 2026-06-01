@@ -7,6 +7,20 @@ import { Calendar, Sparkles, X } from 'lucide-react';
 
 const STORAGE_KEY = 'tib_dismissed_announcements';
 
+function isActiveAnnouncement(a: Announcement): boolean {
+  if (!a.published) return false;
+  const now = Date.now();
+  if (a.starts_at) {
+    const start = new Date(a.starts_at).getTime();
+    if (!Number.isNaN(start) && start > now) return false;
+  }
+  if (a.ends_at) {
+    const end = new Date(a.ends_at).getTime();
+    if (!Number.isNaN(end) && end < now) return false;
+  }
+  return true;
+}
+
 function loadDismissed(): string[] {
   if (typeof window === 'undefined') return [];
   try {
@@ -56,7 +70,9 @@ export default function AnnouncementPopup() {
         return;
       }
       const seen = loadDismissed();
-      const unseen = json.announcements.filter((a) => !seen.includes(a.id));
+      const unseen = json.announcements
+        .filter(isActiveAnnouncement)
+        .filter((a) => !seen.includes(a.id));
       setQueue(unseen);
     } catch {
       setQueue([]);

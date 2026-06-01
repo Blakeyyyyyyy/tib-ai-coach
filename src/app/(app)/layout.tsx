@@ -1,6 +1,7 @@
 'use client';
 
 import Sidebar from '@/components/nav/Sidebar';
+import AnnouncementPopup from '@/components/announcements/AnnouncementPopup';
 import { SidebarProvider, useSidebar } from '@/contexts/SidebarContext';
 
 function AppLayoutInner({ children }: { children: React.ReactNode }) {
@@ -8,6 +9,7 @@ function AppLayoutInner({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-page">
       <Sidebar />
+      <AnnouncementPopup />
       <main
         className={`transition-all duration-300 pt-14 lg:pt-0 ${
           collapsed ? 'lg:pl-16' : 'lg:pl-60'

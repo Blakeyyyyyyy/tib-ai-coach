@@ -115,9 +115,36 @@ async function main() {
     return;
   }
 
-  console.log(`\nFound ${paths.length} PDF(s) in "${BUCKET}".`);
+  const newOnly = process.argv.includes('--new-only');
+  let toIngest = paths;
 
-  for (const objectPath of paths) {
+  if (newOnly) {
+    const { data: existing } = await admin
+      .from('knowledge_chunks')
+      .select('metadata')
+      .contains('metadata', { storage_bucket: BUCKET });
+
+    const ingested = new Set<string>();
+    for (const row of existing || []) {
+      const meta = row.metadata as Record<string, unknown> | null;
+      const p =
+        typeof meta?.storage_path === 'string' ? meta.storage_path.trim() : '';
+      if (p) ingested.add(p);
+    }
+
+    toIngest = paths.filter((p) => !ingested.has(p));
+    console.log(
+      `\nNew-only: ${toIngest.length} PDF(s) to ingest (${paths.length - toIngest.length} already in DB).`
+    );
+    if (toIngest.length === 0) {
+      console.log('Nothing new to ingest.');
+      return;
+    }
+  } else {
+    console.log(`\nFound ${paths.length} PDF(s) in "${BUCKET}".`);
+  }
+
+  for (const objectPath of toIngest) {
     const title = displayTitle(objectPath.split('/').pop() || objectPath);
     console.log(`\n→ ${objectPath}`);
 

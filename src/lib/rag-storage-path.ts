@@ -10,6 +10,12 @@ export function normalizeStorageMatchKey(s: string): string {
     .replace(/[^a-z0-9]+/g, '');
 }
 
+/** Strip Windows-style " (1)" copy suffix before comparing titles */
+export function normalizeStorageDedupeKey(s: string): string {
+  const base = s.replace(/\s*\(\d+\)(?=\.pdf$)/i, '');
+  return normalizeStorageMatchKey(base);
+}
+
 export async function listBucketPdfPaths(
   client: SupabaseClient,
   bucket: string,

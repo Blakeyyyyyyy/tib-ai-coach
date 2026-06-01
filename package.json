@@ -8,6 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "ingest:storage": "tsx scripts/ingest-storage-pdfs.ts",
+    "ingest:storage:new": "tsx scripts/ingest-storage-pdfs.ts --new-only",
+    "dedupe:storage-pdfs": "tsx scripts/dedupe-storage-pdfs.ts",
     "heal:storage-paths": "tsx scripts/heal-storage-paths.ts",
     "cleanup:storage-rag": "tsx scripts/cleanup-orphan-chunks.ts",
     "prepare:json": "tsx scripts/prepare-json-transcripts.ts",

@@ -10,6 +10,7 @@ export async function GET() {
       .select(
         'id, tag, title, summary, description, event_date, published, starts_at, ends_at, created_at, updated_at'
       )
+      .eq('published', true)
       .order('created_at', { ascending: false });
 
     if (error) {

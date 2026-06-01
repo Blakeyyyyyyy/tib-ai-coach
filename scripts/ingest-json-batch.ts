@@ -117,6 +117,18 @@ const SKIP = new Set([
   'Preparing Your Trade Business for Facebook and Success with Amy Wyhoon.json',
   'Social Media Scheduling.json',
   'Turning Your Ideas Into Content with Sam Winch.json',
+  'CF Challenge 1.json',
+  'Canva with Sugarpop Social.json',
+  'Cash Flow for Tradies with Katie Crismale-Marshall.json',
+  'Expert Session on Google Reviews.json',
+  'Expert Session on Systems Mapping using MindMeister.json',
+  'Expert Session with HazardCo Talking Safety.json',
+  "How To Be A Leader - Even When You're The Only One On The Team.json",
+  'Michael Griffiths Expert Session on Referral Based Marketing.json',
+  'Systemology Expert Session.json',
+  'TIB How to work with your partner.json',
+  'TiB Expert Session with Anne Kemp from BUSSQ.json',
+  'WTF is Cash vs Accrual and why you MUST know.json',
 ]);
 
 const root = resolve(process.cwd());
