@@ -1,0 +1,207 @@
+{
+  "version": 1,
+  "description": "Golden RAG tests: expected primary session/PDF. Run: npm run rag:golden",
+  "cases": [
+    {
+      "id": "easy-joe-improv",
+      "tier": "easy",
+      "query": "Joe's session transformational improv how tradies learn",
+      "expectPrimaryAny": ["Joe Pane", "Expert Webinar with Joe"]
+    },
+    {
+      "id": "easy-rhys-marketing",
+      "tier": "easy",
+      "query": "Rhys website traffic no calls marketing audit",
+      "expectPrimaryAny": ["Rhys", "Kaha Digital"]
+    },
+    {
+      "id": "easy-systemology",
+      "tier": "easy",
+      "query": "Systemology documenting systems overwhelm where to start",
+      "expectPrimaryAny": ["Systemology Expert Session"]
+    },
+    {
+      "id": "easy-cashflow",
+      "tier": "easy",
+      "query": "cash flow tradie stress invoices",
+      "expectPrimaryAny": ["Quick Cash Flow", "Cash Flow"]
+    },
+    {
+      "id": "easy-get-off-tools",
+      "tier": "easy",
+      "query": "Get Off the Tools delegation",
+      "expectPrimaryAny": ["Get Off the Tools"]
+    },
+    {
+      "id": "hard-fy-hopeful-paraphrase",
+      "tier": "hard",
+      "query": "Why do tradies feel optimistic at the beginning of July even when last year was a struggle?",
+      "expectPrimaryAny": ["Two Drunk Accountants", "Financial Jam with Two Drunk"],
+      "expectPrimaryNone": ["Momentum Meet 16 July", "Get Ready for EOFY"]
+    },
+    {
+      "id": "hard-website-no-calls-no-name",
+      "tier": "hard",
+      "query": "A tradie gets website visits but the phone never rings. What should they check on the site first?",
+      "expectPrimaryAny": ["Rhys", "Kaha Digital"]
+    },
+    {
+      "id": "hard-systems-apprentice",
+      "tier": "hard",
+      "query": "My apprentice does not follow the checklist. How do I get systems to stick without doing everything myself?",
+      "expectPrimaryAny": [
+        "Systemology Expert Session",
+        "Systemology"
+      ],
+      "expectPrimaryNone": ["Mini Systems Sprint", "MindMeister"]
+    },
+    {
+      "id": "hard-charge-for-quotes",
+      "tier": "hard",
+      "query": "Should I charge for quotes or give them free? What does TiB say about qualifying bad clients?",
+      "expectPrimaryAny": [
+        "Should you charge for quotes",
+        "charge for quotes",
+        "How To Say No",
+        "Crappy Jobs"
+      ]
+    },
+    {
+      "id": "hard-cash-vs-accrual",
+      "tier": "hard",
+      "query": "What is the difference between cash and accrual accounting for a plumbing business?",
+      "expectPrimaryAny": ["Cash vs Accrual", "WTF is Cash"]
+    },
+    {
+      "id": "hard-momentum-kitchen-warranty",
+      "tier": "hard",
+      "query": "How do I tell a client their kitchen job from 12 months ago is out of warranty without a fight?",
+      "expectPrimaryAny": ["1133307969", "KFC", "Collins Group"],
+      "notes": "Story in momentum_meet_1133307969.json (Tara / kitchen / D client)"
+    },
+    {
+      "id": "hard-nicole-three-tasks",
+      "tier": "hard",
+      "query": "What did Nicole say about breaking goals into three physical tasks?",
+      "expectPrimaryAny": ["Nicole"],
+      "optional": true
+    },
+    {
+      "id": "hard-compare-delegation-joe",
+      "tier": "hard",
+      "mode": "multi_source",
+      "query": "Compare delegation in Get Off the Tools with what Joe Pane says about influence.",
+      "expectSourcesInPick": ["Get Off the Tools", "Joe Pane"],
+      "minSourcesMatched": 2
+    },
+    {
+      "id": "hard-momentum-say-no-fitout",
+      "tier": "hard",
+      "query": "Momentum Meet discussion about saying no to internal fit outs and paid quotes",
+      "expectPrimaryAny": ["7 May 2025", "Say No", "Crappy Jobs", "reject"]
+    },
+    {
+      "id": "hard-drunk-accountants-fragments",
+      "tier": "hard",
+      "query": "Drunk accountants happy new year accountant joke new season footy",
+      "expectPrimaryAny": ["Two Drunk Accountants"]
+    },
+    {
+      "id": "hard-hire-apprentice",
+      "tier": "hard",
+      "query": "How to hire first apprentice screening questions tradie business",
+      "expectPrimaryAny": ["Hiring", "HR for Tradies", "apprentice"]
+    },
+    {
+      "id": "hard-price-too-high",
+      "tier": "hard",
+      "query": "Customer said my price is too high on a renovation quote email template",
+      "expectPrimaryAny": [
+        "Screen Customers",
+        "charge for quotes",
+        "Say No",
+        "Objections",
+        "pricing"
+      ],
+      "optional": true
+    },
+    {
+      "id": "hard-masogi-friday",
+      "tier": "hard",
+      "query": "What is a masogi and what should I bring to the Friday session?",
+      "expectPrimaryAny": [
+        "legacy archive",
+        "momentum_meet",
+        "Momentum Jan",
+        "masogi"
+      ]
+    },
+    {
+      "id": "hard-rhys-one-word",
+      "tier": "hard",
+      "query": "Rhys",
+      "expectPrimaryAny": ["Rhys", "Kaha"]
+    },
+    {
+      "id": "hard-griffiths-referrals",
+      "tier": "hard",
+      "query": "Expert session about referrals not facebook ads",
+      "expectPrimaryAny": ["Michael Griffiths", "Referral Based Marketing"]
+    },
+    {
+      "id": "hard-fy-hopeful-explicit",
+      "tier": "hard",
+      "query": "The session opens on the first day of a new financial year. Why is the start described as the most hopeful time?",
+      "expectPrimaryAny": ["Two Drunk Accountants"]
+    },
+    {
+      "id": "hard-eofy-webinar",
+      "tier": "hard",
+      "query": "EOFY webinar what tradies need before end of financial year",
+      "expectPrimaryAny": ["Get Ready for EOFY", "EOFY Webinar"],
+      "expectPrimaryNone": ["Marketing to Survive Tough Times"]
+    },
+    {
+      "id": "hard-daily-focus-dropout",
+      "tier": "hard",
+      "query": "A member gets three weeks into their daily focus routine, has a horrible week on the tools, and completely stops. According to the content's philosophy, what's the right response and what mindset error caused them to stop?",
+      "expectPrimaryAny": ["Finding Daily Focus"],
+      "expectPrimaryNone": ["Clea Jones", "Mental Roadblocks"]
+    },
+    {
+      "id": "hard-cash-bank-balance",
+      "tier": "hard",
+      "query": "A tradie says cash flow is fine because they always have money in the account. Why is a positive bank balance not the same as healthy cash flow management?",
+      "expectPrimaryAny": ["Cash vs Accrual", "WTF is Cash"],
+      "expectPrimaryNone": ["Profit First", "Get Ready for EOFY"]
+    },
+    {
+      "id": "hard-content-sam-winch",
+      "tier": "hard",
+      "query": "I've got years of job-site stories but nothing published. How do you turn messy trade experience into content ideas without sounding like a generic marketing guru?",
+      "expectPrimaryAny": ["Sam Winch", "Turning Your Ideas Into Content"],
+      "expectPrimaryNone": ["Trade-O", "Renee Boardman"]
+    },
+    {
+      "id": "hard-joe-pane-improv",
+      "tier": "hard",
+      "query": "An expert used improv-style exercises in a webinar to explain how tradies actually change behaviour. What's the core idea behind learning through that format versus a normal slide deck?",
+      "expectPrimaryAny": ["Expert Webinar with Joe Pane", "Joe Pane"],
+      "expectPrimaryNone": ["Josie Askin", "Getting the Most Out of the Tradiepreneur"]
+    },
+    {
+      "id": "hard-momentum-june-explicit",
+      "tier": "hard",
+      "query": "Summarise the practical advice from Momentum Meet 25 June 2025 on team communication and deadlines.",
+      "expectPrimaryAny": ["Momentum Meet 25 June 2025", "25 June 2025"],
+      "expectPrimaryNone": ["Momentum Meet April 29", "April 29"]
+    },
+    {
+      "id": "hard-nic-waz-meeting",
+      "tier": "hard",
+      "query": "We have a weekly leadership meeting but the same three issues reappear and nothing is owned to a deadline. What meeting rhythm and agenda habits actually stick for a 12-person electrical company?",
+      "expectPrimaryAny": ["Nic & Waz on Meeting Structure", "Nic & Waz"],
+      "expectPrimaryNone": ["Leadership Skills", "Expert Sessin with Mick", "Momentum Meet"]
+    }
+  ]
+}

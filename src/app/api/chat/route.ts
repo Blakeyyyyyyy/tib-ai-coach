@@ -11,6 +11,13 @@ import {
   retrieveStorageRag,
   ragContextSystemAppendix,
 } from '@/lib/ai/rag-storage';
+import { buildRetrievalTopicHint } from '@/lib/ai/rag-rewrite-gate';
+import {
+  buildMemorySystemAppendix,
+  loadConversationMemory,
+  refreshConversationSummaryIfNeeded,
+  selectCoachMessages,
+} from '@/lib/ai/conversation-memory';
 import { createClient } from '@/lib/supabase/server';
 import type { RagSource } from '@/lib/types';
 
@@ -33,19 +40,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const anthropicMessages = messages.map(
-      (m: { role: string; content: string }) => ({
-        role: m.role,
-        content: m.content,
-      })
+    const maxHistoryRaw = parseInt(
+      process.env.CHAT_MAX_HISTORY_MESSAGES ?? '20',
+      10
+    );
+    const maxHistory =
+      Number.isFinite(maxHistoryRaw) && maxHistoryRaw >= 2
+        ? Math.min(maxHistoryRaw, 40)
+        : 20;
+
+    const chatMessages = messages as { role: string; content: string }[];
+    const memorySummary = await loadConversationMemory(conversationId, user.id);
+
+    const anthropicMessages = selectCoachMessages(
+      chatMessages,
+      memorySummary,
+      maxHistory
     );
 
-    let systemPrompt = COACH_SYSTEM_PROMPT;
+    let systemPrompt =
+      COACH_SYSTEM_PROMPT + buildMemorySystemAppendix(memorySummary);
     let ragSources: RagSource[] = [];
 
-    const lastUser = [...messages]
+    const lastUser = [...chatMessages]
       .reverse()
-      .find((m: { role: string; content: string }) => m.role === 'user') as
+      .find((m) => m.role === 'user') as
       | { role: string; content: string }
       | undefined;
 
@@ -63,12 +82,22 @@ export async function POST(request: NextRequest) {
           ) {
             send({ type: 'status', message: 'Searching knowledge base…' });
             try {
+              const topicHint = buildRetrievalTopicHint(
+                memorySummary,
+                lastUser.content
+              );
               const rag = await retrieveStorageRag(
                 lastUser.content,
-                process.env.OPENAI_API_KEY
+                process.env.OPENAI_API_KEY,
+                { topicHint }
               );
               if (rag?.contextBlock) {
-                systemPrompt += ragContextSystemAppendix(rag.contextBlock);
+                systemPrompt += ragContextSystemAppendix(
+                  rag.contextBlock,
+                  rag.primarySourceTitle,
+                  rag.queryIntent,
+                  rag.answerGuidance ?? undefined
+                );
                 ragSources = rag.sources;
               }
             } catch (e) {
@@ -88,7 +117,13 @@ export async function POST(request: NextRequest) {
             },
             body: JSON.stringify({
               model: 'claude-sonnet-4-20250514',
-              max_tokens: 1500,
+              max_tokens: (() => {
+                const n = parseInt(
+                  process.env.CHAT_MAX_OUTPUT_TOKENS ?? '1500',
+                  10
+                );
+                return Number.isFinite(n) && n >= 256 ? Math.min(n, 4096) : 1500;
+              })(),
               stream: true,
               system: systemPrompt,
               messages: anthropicMessages,
@@ -147,6 +182,14 @@ export async function POST(request: NextRequest) {
             parsed,
             conversationId,
           });
+
+          void refreshConversationSummaryIfNeeded(
+            conversationId,
+            user.id,
+            chatMessages,
+            memorySummary
+          );
+
           controller.close();
         } catch (e) {
           console.error('Chat stream error:', e);

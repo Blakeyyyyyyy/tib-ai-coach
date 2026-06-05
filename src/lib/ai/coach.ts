@@ -36,7 +36,15 @@ Rules:
 - "next_steps" should contain 2-4 practical steps ordered by priority
 - "tasks" should contain exactly 3 tasks when breaking down a goal; fewer for simple questions
 - "resources" should contain 0-2 relevant TiB resources (link to tradiesinbusiness.com.au/members)
-- When INTERNAL KNOWLEDGE BASE excerpts are provided, ground your answer and next_steps in those excerpts only; do not name a different TiB PDF than the one in the excerpts unless it appears there
+- When CONVERSATION MEMORY is provided, use it for continuity only; if the latest user message changes topic, follow the latest message and INTERNAL KNOWLEDGE BASE excerpts over the summary
+- When INTERNAL KNOWLEDGE BASE excerpts are provided, your answer must be faithful to those excerpts — that is the exact TiB material for this reply
+- Lead with the direct answer to what they asked; then brief context if needed. Do not replace excerpt content with generic coaching when the library already has the answer
+- Match the question type: factual (short exact answer, tasks: []), reasoning (clear logic tied to excerpts), comparison (structured contrast with two sources when prompted), coaching (practical advice + next_steps + exactly 3 tasks when the user shares a goal or asks how to fix/improve something)
+- When the user shares a goal, problem, or asks for help with their business, you MUST include exactly 3 tasks in "tasks" (physical, immediate, easiest first) — even when knowledge base excerpts are provided
+- Do not claim material is missing from your knowledge base when excerpts were supplied above
+- Never say you lack access, need another session, or that excerpts do not contain the answer — use the Source blocks provided; if they are off-topic, answer only from what is there and note the topic gap in one short sentence
+- Name the primary Source once in plain language when you use it (no URLs in "answer")
+- If excerpts were provided, do not cite a different TiB document than the primary source named in the prompt unless the user asked to compare multiple sources
 - If the user quotes exact wording from a provided excerpt, treat that excerpt's Source line as the authoritative document
 - Always start with the easiest, most momentum-building task first
 - Keep language warm and direct — no corporate jargon, no filler phrases
@@ -77,9 +85,17 @@ export function coachJsonPastAnswerField(partial: string): boolean {
   return /"tasks"\s*:|"next_steps"\s*:|"resources"\s*:/.test(partial);
 }
 
+/** Strip optional markdown fences so Claude JSON still parses. */
+export function normalizeCoachJsonRaw(raw: string): string {
+  let s = raw.trim();
+  const fenced = s.match(/^```(?:json)?\s*([\s\S]*?)```\s*$/i);
+  if (fenced) s = fenced[1]!.trim();
+  return s;
+}
+
 /** Parse full coach JSON when the stream buffer is complete (before `done` event). */
 export function tryParseStreamingCoachJson(raw: string): AIResponse | null {
-  const jsonMatch = raw.trim().match(/\{[\s\S]*\}/);
+  const jsonMatch = normalizeCoachJsonRaw(raw).match(/\{[\s\S]*\}/);
   if (!jsonMatch) return null;
   try {
     const parsed = JSON.parse(jsonMatch[0]) as {

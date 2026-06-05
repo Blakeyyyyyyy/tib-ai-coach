@@ -1,0 +1,150 @@
+Embedding duplicate audit — 2026-06-05T14:20:04.825Z
+
+=== SUMMARY ===
+Total chunks: 20901
+Legacy Momentum (4 files): 798 chunks (expected 794)
+
+=== DUPLICATE (source_file, chunk_index) ===
+None ✓
+
+=== IDENTICAL EMBEDDING VECTOR (same file — FAIL if different text) ===
+None ✓
+
+=== IDENTICAL EMBEDDING + SAME TEXT (source transcript overlap — warn only) ===
+Momentum_Meet_22_October_2025.json: 2 rows, vector 77a127044d80590f
+Momentum_Meet_29_October_2025.json: 2 rows, vector cfdb7249f830492e
+
+=== IDENTICAL CONTENT TEXT (same file) ===
+Momentum_Meet_9_July_2025.json: 2 rows, hash 91c91d435c668958
+Momentum_Meet_22_October_2025.json: 2 rows, hash bd7dbc81586dff3e
+Momentum_Meet_29_October_2025.json: 2 rows, hash c04301dc22222e5c
+
+=== IDENTICAL CONTENT (global, any source) ===
+3 duplicate content hash(es) across DB (often OK if different PDFs quote same line — review top)
+
+=== JSON COUNT: disk rows vs DB chunks ===
+5 Ideas for Toolbox Talk.json: disk=13 db=14 OVER
+7 Myths of Systemising your Business with James Brown.json: disk=307 db=308 OVER
+budget_vs_actual_spreadsheet.json: disk=29 db=30 OVER
+Canva with Sugarpop Social.json: disk=107 db=108 OVER
+Cash Flow for Tradies with Katie Crismale-Marshall.json: disk=153 db=154 OVER
+CF Challenge 1.json: disk=207 db=208 OVER
+Clea Jones on The 9 Mental Roadblocks Stopping You From Being a Content Marketing Rockstar.json: disk=120 db=121 OVER
+Client Avatar.json: disk=83 db=84 OVER
+Creating Wealth In Chaos The Secrets To Building Wealth In Uncertain Times.json: disk=218 db=219 OVER
+Demo and Q&A Expert Session.json: disk=260 db=261 OVER
+Done With You - Leads Tracking & Marketing Q&A(1).json: disk=179 db=180 OVER
+Done With You - Marketing & AI(1).json: disk=157 db=158 OVER
+Done With You - Tradie Systems Map(1).json: disk=99 db=100 OVER
+Done with You Session  Creating Company Values & Mission Vision Statement.json: disk=147 db=148 OVER
+Done with You Session - Scripts for Sales & Enquiries.json: disk=160 db=161 OVER
+Done With You Session Create your 'right now' marketing plan & leads budget.json: disk=178 db=179 OVER
+Done With You Session HR System For Success.json: disk=233 db=234 OVER
+Done with You Session Improve Conversion By Mapping Your Sales Process.json: disk=195 db=196 OVER
+Done With You Session on Backcosting.json: disk=106 db=107 OVER
+Done With You Session on Identifying Your A,B, C and D Clients(1).json: disk=155 db=156 OVER
+Done With You Session on Using AI in your Trade Business(1).json: disk=199 db=200 OVER
+Done With You Session with Nic & Waz on Meeting Structure.json: disk=250 db=251 OVER
+Done With You Session with Nic & Waz.json: disk=30 db=31 OVER
+Expert Sessin with Mick.json: disk=199 db=200 OVER
+Expert Session - Potential of AI in Your Business with Blake(1).json: disk=220 db=221 OVER
+Expert Session on Google My Business Local Service Ads with Nicholas Dogulin.json: disk=160 db=161 OVER
+Expert Session on Google Reviews.json: disk=135 db=136 OVER
+Expert Session on Systems Mapping using MindMeister.json: disk=142 db=143 OVER
+Expert Session w. Dr Ash Moreland.json: disk=222 db=223 OVER
+Expert Session w. Kristy Lee Billet.json: disk=222 db=223 OVER
+Expert Session with Bold Wealth.json: disk=219 db=220 OVER
+Expert Session with Dale Stephens from Sophiie AI(1).json: disk=155 db=156 OVER
+Expert Session with Dani Ferrier.json: disk=161 db=162 OVER
+Expert Session with HazardCo Talking Safety.json: disk=224 db=225 OVER
+Expert Session with John & Amanda - Retune.json: disk=221 db=222 OVER
+Expert Session with Josie Askin.json: disk=146 db=147 OVER
+Expert Session with Kristy Lee.json: disk=250 db=251 OVER
+Expert Session with Matt Heighway.json: disk=259 db=260 OVER
+Expert Session with Michael Griffiths(1).json: disk=119 db=120 OVER
+Expert Session with Rhys from Kaha Digital(1).json: disk=180 db=181 OVER
+Expert Session with Sarah Greener.json: disk=216 db=217 OVER
+Expert Sessions Done with You Screening Questions.json: disk=169 db=170 OVER
+Expert Webinar with Joe Pane.json: disk=221 db=222 OVER
+Expert Webinar with Kristy-Lee from The Footprint Group.json: disk=241 db=242 OVER
+Financial Jam with Jackson Millan.json: disk=214 db=215 OVER
+Financial Jam with Two Drunk Accountants.json: disk=226 db=227 OVER
+Financial Jam.json: disk=170 db=171 OVER
+Finding Daily Focus(1).json: disk=13 db=14 OVER
+Get Ready for EOFY Webinar.json: disk=99 db=100 OVER
+Getting the Most Out of the Tradiepreneur Program.json: disk=166 db=167 OVER
+Giving Feedback.json: disk=11 db=12 OVER
+hourly_rate_calculator_transcript.json: disk=53 db=54 OVER
+How To Be A Leader - Even When You're The Only One On The Team.json: disk=125 db=126 OVER
+How To Cashflow Forecast.json: disk=28 db=29 OVER
+How to Find and Keep Good Staff During a Recession.json: disk=118 db=119 OVER
+How to Reduce Cash Flow Stress.json: disk=133 db=134 OVER
+How To Say No To Crappy Jobs.json: disk=112 db=113 OVER
+How to Use the Budget vs Actual Spreadsheet.json: disk=13 db=14 OVER
+How to Work with the Younger Generation with Cal Robinson from Young Gunz.json: disk=269 db=270 OVER
+HR Compliance Essentials for Tradies in Business.json: disk=174 db=175 OVER
+HR for Tradies in Business.json: disk=248 db=249 OVER
+Influence and Profit Accelerator with Joe Pane.json: disk=212 db=213 OVER
+Life and Wealth Planning(1).json: disk=644 db=645 OVER
+Managing Debtors.json: disk=11 db=12 OVER
+Marketing to Survive Tough Times.json: disk=127 db=128 OVER
+Michael Griffiths Expert Session on Referral Based Marketing.json: disk=177 db=178 OVER
+Mini Systems Sprint - Business Meeting Structure.json: disk=328 db=329 OVER
+Momentum Meet April 29.json: disk=201 db=202 OVER
+momentum_apr_8.json: disk=248 db=249 OVER
+momentum_jan_21.json: disk=197 db=198 OVER
+momentum_meet.json: disk=209 db=210 OVER
+Momentum_Meet_04_June_2025.json: disk=161 db=162 OVER
+Momentum_Meet_10_September_2025.json: disk=171 db=172 OVER
+momentum_meet_1133307969.json: disk=159 db=160 OVER
+momentum_meet_1136289171.json: disk=162 db=163 OVER
+momentum_meet_1143260246.json: disk=264 db=265 OVER
+Momentum_Meet_11_June_2025.json: disk=157 db=158 OVER
+Momentum_Meet_13_August_2025.json: disk=131 db=132 OVER
+Momentum_Meet_14_May_2025.json: disk=189 db=190 OVER
+Momentum_Meet_16_July_2025.json: disk=175 db=176 OVER
+Momentum_Meet_18_June_2025.json: disk=178 db=179 OVER
+Momentum_Meet_20_August_2025.json: disk=166 db=167 OVER
+Momentum_Meet_20_May_2025.json: disk=141 db=142 OVER
+Momentum_Meet_22_October_2025.json: disk=103 db=104 OVER
+Momentum_Meet_23_July_2025.json: disk=218 db=219 OVER
+Momentum_Meet_25_June_2025.json: disk=129 db=130 OVER
+Momentum_Meet_27_August_2025.json: disk=184 db=185 OVER
+Momentum_Meet_28_May_2025.json: disk=125 db=126 OVER
+Momentum_Meet_29_October_2025.json: disk=108 db=109 OVER
+Momentum_Meet_30_July_2025.json: disk=201 db=202 OVER
+Momentum_Meet_3_September_2025.json: disk=153 db=154 OVER
+Momentum_Meet_6_August_2025.json: disk=157 db=158 OVER
+Momentum_Meet_7_May_2025.json: disk=180 db=181 OVER
+Momentum_Meet_8_October_2025.json: disk=150 db=151 OVER
+Momentum_Meet_9_July_2025.json: disk=159 db=160 OVER
+Momentum_Meet_April_22.json: disk=203 db=204 OVER
+momentum_meet_feb_25.json: disk=152 db=153 OVER
+momentum_meet_march_11.json: disk=236 db=237 OVER
+momentum_meet_march_4.json: disk=108 db=109 OVER
+momentum_meet_nov_19.json: disk=242 db=243 OVER
+Must Do Marketing Webinar(1).json: disk=123 db=124 OVER
+One Page Wealth Plan with Jackson Millan.json: disk=220 db=221 OVER
+Overcoming Communication Challenges and Reconnecting with Your Partner with Megs Dixon.json: disk=174 db=175 OVER
+Overcoming Communication Challenges with Your Partner with Megs Dixon.json: disk=174 db=175 OVER
+Preparing Your Trade Business for Facebook and Success with Amy Wyhoon.json: disk=171 db=172 OVER
+Q&A Expert Session with Nicole Davidson.json: disk=194 db=195 OVER
+Q&A Expert Webinar.json: disk=279 db=280 OVER
+should_you_charge_for_quotes.json: disk=26 db=27 OVER
+Social Media Scheduling.json: disk=211 db=212 OVER
+Systemology Expert Session.json: disk=249 db=250 OVER
+TiB Expert Session with Anne Kemp from BUSSQ.json: disk=143 db=144 OVER
+TIB How to work with your partner.json: disk=35 db=36 OVER
+Trade-O with Renee Boardman.json: disk=129 db=130 OVER
+Tradiepreneur Financial Dashboard.json: disk=176 db=177 OVER
+Tradiepreneur Review(1).json: disk=162 db=163 OVER
+transcript_chunks.json: disk=51 db=52 OVER
+Turning Your Ideas Into Content with Sam Winch.json: disk=241 db=242 OVER
+Understanding the Five Profit Levers with Tradies In Business.json: disk=20 db=21 OVER
+Write Your Sexy Job Ad (Sexy Ad Builder).json: disk=59 db=60 OVER
+WTF is Cash vs Accrual and why you MUST know.json: disk=153 db=154 OVER
+
+=== GLOBAL CONTENT DUP DETAIL ===
+bd7dbc81586dff3e: 2 ids
+c04301dc22222e5c: 2 ids
+91c91d435c668958: 2 ids

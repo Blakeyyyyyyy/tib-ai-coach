@@ -1,5 +1,6 @@
 /**
  * Semantic reranking via Cohere Rerank API (v2).
+ * Reorders passages by relevance; only explicitly low-scoring hits are dropped.
  */
 
 import type { RerankOutcome, RerankPassage } from '@/lib/ai/rerank-types';
@@ -49,7 +50,7 @@ export async function rerankPassagesWithCohere(
     Number.isFinite(topNRaw) && topNRaw >= 1 ? topNRaw : passages.length;
   const minScore =
     options?.minScore ??
-    parseFloat(process.env.RAG_COHERE_RERANK_MIN_SCORE ?? '0.05');
+    parseFloat(process.env.RAG_COHERE_RERANK_MIN_SCORE ?? '0.01');
 
   const documents = passages.map(passageDocument);
 
@@ -95,9 +96,10 @@ export async function rerankPassagesWithCohere(
     order.push(passage.index);
   }
 
+  // Keep chunks Cohere did not return in top_n — append after reranked hits (vector order).
   for (const p of passages) {
     if (!seen.has(p.index) && !dropSet.has(p.index)) {
-      dropSet.add(p.index);
+      order.push(p.index);
     }
   }
 

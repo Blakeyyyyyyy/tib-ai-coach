@@ -13,6 +13,7 @@ import { config } from 'dotenv';
 import { resolve } from 'path';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { embedTexts } from '../src/lib/ai/openai-embed';
+import { upsertPdfSessionCard } from '../src/lib/ai/upsert-session-card';
 import { healStaleStoragePaths } from '../src/lib/heal-storage-paths';
 import {
   listBucketPdfPaths,
@@ -22,9 +23,19 @@ import {
 config({ path: resolve(process.cwd(), '.env') });
 
 const BUCKET = process.env.RAG_STORAGE_BUCKET ?? 'Rag';
-/** ~250 tokens — better for exact quotes and precise PDF matching */
-const CHUNK_SIZE = parseInt(process.env.RAG_CHUNK_SIZE ?? '1000', 10) || 1000;
-const CHUNK_OVERLAP = parseInt(process.env.RAG_CHUNK_OVERLAP ?? '200', 10) || 200;
+/** PDFs: smaller chunks = more passages per doc (~2× coverage in RAG). */
+const CHUNK_SIZE =
+  parseInt(
+    process.env.RAG_PDF_CHUNK_SIZE ?? process.env.RAG_CHUNK_SIZE ?? '650',
+    10
+  ) || 650;
+const CHUNK_OVERLAP =
+  parseInt(
+    process.env.RAG_PDF_CHUNK_OVERLAP ??
+      process.env.RAG_CHUNK_OVERLAP ??
+      '120',
+    10
+  ) || 120;
 const EMBED_BATCH = 24;
 
 function formatChunkForStorage(documentTitle: string, body: string): string {
@@ -162,7 +173,7 @@ async function main() {
     ) => Promise<{ text: string }>;
     const { text } = await pdfParse(buf);
     const rawChunks = chunkText(text);
-    const chunks = rawChunks.map((c) => formatChunkForStorage(title, c));
+    const chunks = rawChunks.map((body) => formatChunkForStorage(title, body));
     if (chunks.length === 0) {
       console.log('  no extractable text, skip');
       continue;
@@ -193,7 +204,15 @@ async function main() {
       }
       process.stdout.write(`  embedded ${Math.min(i + EMBED_BATCH, chunks.length)}/${chunks.length}\r`);
     }
-    console.log(`  done: ${chunks.length} chunks`);
+    const rawTexts = rawChunks.map((c) => c);
+    await upsertPdfSessionCard(admin, openai, {
+      title,
+      storagePath: objectPath,
+      bucket: BUCKET,
+      chunkTexts: rawTexts.slice(0, 12),
+    });
+
+    console.log(`  done: ${chunks.length} chunks + session card`);
   }
 
   console.log('\nIngest complete.');

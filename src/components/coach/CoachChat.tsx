@@ -129,9 +129,34 @@ export default function CoachChat({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [conversationTitle, setConversationTitle] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   /** Conversation id currently reflected in `messages` (skip DB reload after URL update). */
   const messagesConvIdRef = useRef<string | null>(null);
+  /** User is near the bottom — auto-scroll on new content; false after they scroll up. */
+  const stickToBottomRef = useRef(true);
+  /** Next messages update should scroll (e.g. user just sent, or opened a conversation). */
+  const forceScrollOnNextUpdateRef = useRef(false);
+
+  const SCROLL_BOTTOM_THRESHOLD_PX = 80;
+
+  const updateStickToBottom = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const distanceFromBottom =
+      el.scrollHeight - el.scrollTop - el.clientHeight;
+    stickToBottomRef.current =
+      distanceFromBottom <= SCROLL_BOTTOM_THRESHOLD_PX;
+  }, []);
+
+  const scrollMessagesToBottom = useCallback((behavior: ScrollBehavior) => {
+    const el = scrollContainerRef.current;
+    if (el) {
+      el.scrollTo({ top: el.scrollHeight, behavior });
+      return;
+    }
+    messagesEndRef.current?.scrollIntoView({ behavior });
+  }, []);
 
   const touchConversation = useCallback(async (convId: string) => {
     const supabase = createClient();
@@ -184,7 +209,13 @@ export default function CoachChat({
       setPendingConvId(null);
       messagesConvIdRef.current = null;
       setLoadingHistory(false);
+      stickToBottomRef.current = true;
       return;
+    }
+
+    if (messagesConvIdRef.current !== routeConversationId) {
+      stickToBottomRef.current = true;
+      forceScrollOnNextUpdateRef.current = true;
     }
 
     if (
@@ -221,14 +252,47 @@ export default function CoachChat({
   }, [routeConversationId]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, loading, loadingHistory]);
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const onScroll = () => updateStickToBottom();
+    el.addEventListener('scroll', onScroll, { passive: true });
+    updateStickToBottom();
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [updateStickToBottom, loadingHistory, routeConversationId]);
+
+  useEffect(() => {
+    const shouldScroll =
+      forceScrollOnNextUpdateRef.current || stickToBottomRef.current;
+    if (!shouldScroll) return;
+
+    const force = forceScrollOnNextUpdateRef.current;
+    forceScrollOnNextUpdateRef.current = false;
+
+    const streaming = messages.some(
+      (m) =>
+        m.role === 'assistant' &&
+        (m.streaming || m.finishingStructured || m.streamStatus)
+    );
+    const behavior: ScrollBehavior =
+      force || streaming || loading ? 'auto' : 'smooth';
+
+    const id = requestAnimationFrame(() => {
+      scrollMessagesToBottom(behavior);
+    });
+    return () => cancelAnimationFrame(id);
+  }, [
+    messages,
+    loading,
+    loadingHistory,
+    scrollMessagesToBottom,
+  ]);
 
   const saveTasks = async (tasks: TaskFromAI[], convId: string) => {
-    if (!userId || tasks.length === 0) return;
+    const valid = tasks.filter((t) => t?.title?.trim());
+    if (!userId || valid.length === 0) return;
     const supabase = createClient();
-    for (const task of tasks) {
-      await supabase.from('tasks').insert({
+    for (const task of valid) {
+      const { error } = await supabase.from('tasks').insert({
         id: uuidv4(),
         user_id: userId,
         title: task.title,
@@ -239,6 +303,9 @@ export default function CoachChat({
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });
+      if (error) {
+        console.error('Failed to save task:', error.message, task.title);
+      }
     }
   };
 
@@ -288,6 +355,8 @@ export default function CoachChat({
       content: trimmed,
       created_at: new Date().toISOString(),
     };
+    stickToBottomRef.current = true;
+    forceScrollOnNextUpdateRef.current = true;
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
     setLoading(true);
@@ -555,7 +624,10 @@ export default function CoachChat({
         </h1>
       </div>
 
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto min-h-0"
+      >
         <div className="max-w-[48rem] mx-auto px-3 sm:px-4 py-6 lg:py-10">
           {messages.length === 0 ? (
             <EmptyState onChipClick={handleChipClick} />

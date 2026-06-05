@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { salientPhraseCandidates } from '@/lib/ai/rag-query-terms';
 
 export type PhraseChunkRow = {
   id: string;
@@ -10,7 +11,7 @@ export type PhraseChunkRow = {
 };
 
 /** Similarity score assigned to literal phrase hits (beats generic vector matches). */
-export const PHRASE_MATCH_SIMILARITY = 0.99;
+export const PHRASE_MATCH_SIMILARITY = 0.991;
 
 function normalizeForPhraseSearch(s: string): string {
   return s
@@ -23,18 +24,9 @@ function escapeIlike(pattern: string): string {
   return pattern.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
 }
 
-/** Phrases worth scanning in chunk text (quoted line, or long enough substring). */
+/** Phrases worth scanning in chunk text (quotes, n-grams, or long question). */
 export function phraseSearchCandidates(userQuery: string): string[] {
-  const normalized = normalizeForPhraseSearch(userQuery);
-  const stripped = normalized.replace(/^["']+|["']+$/g, '').trim();
-  if (stripped.length < 10) return [];
-
-  const candidates = new Set<string>([stripped]);
-  // PDF text may use curly apostrophe
-  if (stripped.includes("'")) {
-    candidates.add(stripped.replace(/'/g, '\u2019'));
-  }
-  return [...candidates];
+  return salientPhraseCandidates(userQuery, 6);
 }
 
 export function chunkContainsPhrase(
@@ -55,9 +47,12 @@ export function chunkContainsPhrase(
 export async function fetchPhraseMatches(
   admin: SupabaseClient,
   userQuery: string,
-  limit = 10
+  limit = 10,
+  extraCandidates: string[] = []
 ): Promise<PhraseChunkRow[]> {
-  const candidates = phraseSearchCandidates(userQuery);
+  const candidates = [
+    ...new Set([...phraseSearchCandidates(userQuery), ...extraCandidates]),
+  ].slice(0, 8);
   if (candidates.length === 0) return [];
 
   const seen = new Set<string>();

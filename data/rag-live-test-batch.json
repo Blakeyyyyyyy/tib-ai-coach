@@ -1,0 +1,149 @@
+{
+  "description": "30 medium-hard live coach tests (no PDF/session names in questions). Paste query into http://localhost:3000/coach. Source file is for your scoring only.",
+  "pdfs": [
+    {
+      "source": "Get-Off-the-Tools-Guide-Updated.pdf",
+      "query": "I'm still quoting and running every job myself even with two guys on the payroll. What's the realistic order of delegation so I'm not the bottleneck on every decision?"
+    },
+    {
+      "source": "Quick-Cash-Flow-Strategies-for-Tradies.pdf",
+      "query": "Work is booked solid but I'm always scrambling to pay suppliers before the next deposit lands. What fast levers can I pull this month without taking on bad debt?"
+    },
+    {
+      "source": "Profit-First-for-Tradiepreneurs.pdf",
+      "query": "All my trade income lands in one account and I keep spending from whatever's left. How should I split money so tax, wages, and profit don't get eaten by operating costs?"
+    },
+    {
+      "source": "Price-Objection-Handling-Script.pdf",
+      "query": "A renovation client replied that we're 'way more expensive' than the other quote and wants a discount before they'll book. How should I respond without racing to the bottom?"
+    },
+    {
+      "source": "Client-Avatar-v.202304.pdf",
+      "query": "My marketing is aimed at the perfect dream client, but most of my work still comes from a messier mix of jobs. Should I market to who's paying me now or who I want in two years?"
+    },
+    {
+      "source": "15-Keys-For-Team-Meetings.pdf",
+      "query": "Our Monday toolbox talks turn into complaint sessions and nothing gets tracked. What structure would make a weekly team huddle actually change behaviour on site?"
+    },
+    {
+      "source": "Hiring-Cheat-Sheet.pdf",
+      "query": "I'm about to hire my first apprentice and I'm worried about picking the wrong person and wasting six months. What should I verify before I offer the role?"
+    },
+    {
+      "source": "Basic-Enquiry-Script.pdf",
+      "query": "I get a lot of 'just send me a price' calls and half never book. What should I be asking on the first enquiry call to filter tyre-kickers early?"
+    },
+    {
+      "source": "50-Ways-to-Pull-Your-5-Profit-Levers.pdf",
+      "query": "Revenue is up but profit feels flat — which five areas of a trade business should I diagnose first before I blame the economy?"
+    },
+    {
+      "source": "TIB-Mapping-Essential-Systems-for-Tradies.pdf",
+      "query": "Everyone says 'document your systems' but I've got quotes, installs, invoicing, and callbacks all tangled. Where do I start mapping what actually matters for a residential plumbing business?"
+    }
+  ],
+  "json_with_video_url": [
+    {
+      "source": "Systemology Expert Session.json",
+      "hasUrl": true,
+      "query": "I tried systemising once and it turned into a binder nobody uses. Why do tradie owners resist systems, and what's a sane first process to capture instead of copying McDonald's?"
+    },
+    {
+      "source": "WTF is Cash vs Accrual and why you MUST know.json",
+      "hasUrl": true,
+      "query": "My bookkeeper says we're profitable on paper but I feel broke every Thursday. Why can a healthy bank balance still poison how I judge whether the business is actually performing?"
+    },
+    {
+      "source": "Expert Session with Rhys from Kaha Digital(1).json",
+      "hasUrl": true,
+      "query": "Google Analytics shows hundreds of visits a month to our site but the office phone barely rings. What are the most likely on-page or offer problems to audit first?"
+    },
+    {
+      "source": "Financial Jam with Two Drunk Accountants.json",
+      "hasUrl": true,
+      "query": "It's early July and last year was a grind, but I still feel weirdly optimistic. Why would the start of a new financial year feel like a fresh footy season for tradies?"
+    },
+    {
+      "source": "Get Ready for EOFY Webinar.json",
+      "hasUrl": true,
+      "query": "EOFY is three weeks away and my records are a shoebox of receipts. What should a trade business owner prioritise so they're not scrambling on the last night of June?"
+    },
+    {
+      "source": "Done With You Session with Nic & Waz on Meeting Structure.json",
+      "hasUrl": true,
+      "query": "We have a weekly leadership meeting but the same three issues reappear and nothing is owned to a deadline. What meeting rhythm and agenda habits actually stick for a 12-person electrical company?"
+    },
+    {
+      "source": "How To Say No To Crappy Jobs.json",
+      "hasUrl": true,
+      "query": "A builder keeps feeding us margin-killer variations and expects instant turnaround. How do I decline or reprice bad-fit work without torching the relationship?"
+    },
+    {
+      "source": "Michael Griffiths Expert Session on Referral Based Marketing.json",
+      "hasUrl": true,
+      "query": "I'm spending on boosted posts but repeat work still comes from blokes who know a bloke. What would a referral-first approach look like compared to chasing cold leads on social?"
+    },
+    {
+      "source": "Momentum_Meet_16_July_2025.json",
+      "hasUrl": true,
+      "query": "A past client wants warranty work on a kitchen we finished about a year ago and they're already angry in the group chat. How do I set the boundary without a blow-up?"
+    },
+    {
+      "source": "Finding Daily Focus(1).json",
+      "hasUrl": true,
+      "query": "I was three weeks into a daily focus habit, had a brutal week on the tools, and now I've stopped completely. What's the intended mindset when you slip — punish yourself or reset?"
+    }
+  ],
+  "json_without_video_url": [
+    {
+      "source": "Expert Webinar with Joe Pane.json",
+      "hasUrl": false,
+      "query": "An expert used improv-style exercises in a webinar to explain how tradies actually change behaviour. What's the core idea behind learning through that format versus a normal slide deck?"
+    },
+    {
+      "source": "Client Avatar.json",
+      "hasUrl": false,
+      "query": "In one done-with-you session they talked about a 'right now' customer versus parking the 'ideal' one. When cash flow is tight, is it smarter to market to who is already buying or hold out for the dream client?"
+    },
+    {
+      "source": "7 Myths of Systemising your Business with James Brown.json",
+      "hasUrl": false,
+      "query": "My old boss tried systems with a consultant and it failed, so my crew thinks documentation is corporate nonsense. What myths make tradies sabotage systemising before they start?"
+    },
+    {
+      "source": "Clea Jones on The 9 Mental Roadblocks Stopping You From Being a Content Marketing Rockstar.json",
+      "hasUrl": false,
+      "query": "I know I should post on social but I freeze every time. What are the common mental roadblocks that stop owners from showing up consistently as a 'content' person?"
+    },
+    {
+      "source": "HR for Tradies in Business.json",
+      "hasUrl": false,
+      "query": "I've got three employees and no HR person. What compliance and people risks do most trade businesses overlook until something blows up?"
+    },
+    {
+      "source": "Turning Your Ideas Into Content with Sam Winch.json",
+      "hasUrl": false,
+      "query": "I've got years of job-site stories but nothing published. How do you turn messy trade experience into content ideas without sounding like a generic marketing guru?"
+    },
+    {
+      "source": "Write Your Sexy Job Ad (Sexy Ad Builder).json",
+      "hasUrl": false,
+      "query": "My last job ad got crickets — just 'must have licence, must be reliable.' What makes a tradie job ad actually attract the right applicant instead of another time-waster?"
+    },
+    {
+      "source": "Influence and Profit Accelerator with Joe Pane.json",
+      "hasUrl": false,
+      "query": "I close jobs fine on site but struggle to influence my team and suppliers when I'm not there. What links influence skills to profit in a small trade business?"
+    },
+    {
+      "source": "Demo and Q&A Expert Session.json",
+      "hasUrl": false,
+      "query": "New members often ask the same nervous questions in the first live Q&A. What themes usually come up about getting value from the community in the first 90 days?"
+    },
+    {
+      "source": "Getting the Most Out of the Tradiepreneur Program.json",
+      "hasUrl": false,
+      "query": "I pay for membership but only watch random replays. What habits separate members who transform their business from those who stay stuck consuming content?"
+    }
+  ]
+}

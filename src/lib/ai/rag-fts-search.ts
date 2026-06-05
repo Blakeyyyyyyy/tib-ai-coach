@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { PhraseChunkRow } from '@/lib/ai/rag-phrase-search';
 
 /** Map Postgres ts_rank (typically 0–1) into vector-like scores for merging. */
-export const FTS_MATCH_SIMILARITY_BASE = 0.88;
+export const FTS_MATCH_SIMILARITY_BASE = 0.9;
 
 export function ftsQueryEligible(userQuery: string): boolean {
   const q = userQuery.replace(/\s+/g, ' ').trim();

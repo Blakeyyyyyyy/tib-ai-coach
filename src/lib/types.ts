@@ -60,6 +60,12 @@ export interface RagSource {
   source_type?: 'pdf' | 'video_transcript';
   storage_bucket?: string | null;
   storage_path?: string | null;
+  /** Transcript without Vimeo URL */
+  video_link_missing?: boolean;
+  /** From chunk metadata (video citations) */
+  video_name?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
 }
 
 export interface Message {

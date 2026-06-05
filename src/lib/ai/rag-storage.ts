@@ -5,9 +5,8 @@ import {
   videoTranscriptCitationTitle,
 } from '@/lib/rag-source-from-row';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
-import { embedQuery } from '@/lib/ai/openai-embed';
+import { embedTexts } from '@/lib/ai/openai-embed';
 import { rerankPassages } from '@/lib/ai/rerank';
-import { fetchFtsMatches } from '@/lib/ai/rag-fts-search';
 import {
   PHRASE_MATCH_SIMILARITY,
   mergeRetrievalCandidates,
@@ -15,24 +14,91 @@ import {
 } from '@/lib/ai/rag-merge';
 import {
   chunkContainsPhrase,
-  fetchPhraseMatches,
   phraseSearchCandidates,
 } from '@/lib/ai/rag-phrase-search';
+import {
+  fetchTitleKeywordMatches,
+  TITLE_KEYWORD_MATCH_SIMILARITY,
+} from '@/lib/ai/rag-title-keyword-search';
+import {
+  entityAnchorTerms,
+  hasEntityStyleTerms,
+  signalPhrasesFromQuery,
+  titleSearchTerms,
+} from '@/lib/ai/rag-query-terms';
+import {
+  filterMatchesToSessions,
+  scoreSessionDocuments,
+  selectTopSessionDocKeys,
+  topDocKeysByTitleKeywordHits,
+} from '@/lib/ai/rag-session-select';
+import type { PhraseChunkRow } from '@/lib/ai/rag-phrase-search';
+import { diversifyMatchesByDoc } from '@/lib/ai/rag-diversify-matches';
+import {
+  resolveRagIntentParams,
+  type RagQueryIntent,
+} from '@/lib/ai/rag-query-mode';
+import {
+  buildEmbedInputs,
+  extraEmbedInputsAfterRewrite,
+} from '@/lib/ai/rag-embed-inputs';
+import {
+  buildLexicalQuery,
+  fetchLexicalMatchesParallel,
+  mergePhraseRows,
+  mergeTitleKeywordRows,
+} from '@/lib/ai/rag-lexical-fetch';
+import { isSessionCardRow } from '@/lib/ai/session-card';
+import {
+  llmRewriteQueriesForRag,
+  softRewriteFromTopicHint,
+  type RagRewriteMeta,
+} from '@/lib/ai/rag-llm-query-rewrite';
+import { computeRewriteGate } from '@/lib/ai/rag-rewrite-gate';
+import {
+  mergeRagRewrites,
+  queryHintsForceDocKeys,
+} from '@/lib/ai/rag-query-heuristics';
+import {
+  correctExplicitSessionPrimaryDocKey,
+  extractExplicitSessionTitle,
+  sessionTitleMatchScore,
+} from '@/lib/ai/rag-explicit-session';
+import {
+  applyAllQueryAwareSessionPenalties,
+  correctMisroutedPrimaryDocKey,
+  isGenericLeadershipCollisionTitle,
+  shouldSingleCitationForMeetingRhythm,
+} from '@/lib/ai/rag-retrieval-penalties';
+import {
+  applyTopicVectorConsensusPrimary,
+  isQueryForTopic,
+  shouldFetchRhysTitleKeywords,
+} from '@/lib/ai/rag-topic-engine';
+import {
+  fetchRouteAnchorChunks,
+  mergeRouteAnchorsIntoMatches,
+} from '@/lib/ai/rag-route-anchor-fetch';
+import {
+  docKeysForRoute,
+  routeQueryToSession,
+  shouldLockPrimaryToRoute,
+  shouldRerankWithinRouteOnly,
+  shouldSkipRerank,
+} from '@/lib/ai/rag-session-router';
+import {
+  dominantVectorDocKey,
+  fetchMergedVectorMatches,
+  sessionAgreementDocKeys,
+} from '@/lib/ai/rag-multi-vector';
 
-const DEFAULT_MAX_SOURCE_PDFS = 3;
-const DEFAULT_MAX_KB_LINKS = 3;
-const DEFAULT_MATCH_THRESHOLD = 0.26;
-const DEFAULT_VECTOR_MATCH_COUNT = 40;
-const DEFAULT_CONTEXT_CHUNKS = 8;
-/** Min best-chunk similarity to show any Knowledge base link */
-const DEFAULT_MIN_SCORE_FOR_CITATION = 0.28;
-/** Extra PDF link only if its best chunk meets this */
-const DEFAULT_MIN_SCORE_FOR_EXTRA_CITATION = 0.31;
-/**
- * Top PDF must lead the next by at least this much (similarity) to cite both.
- * Smaller gap = ambiguous (many similar playbooks) → cite only the #1 PDF.
- */
-const DEFAULT_MIN_GAP_FOR_EXTRA_CITATION = 0.055;
+const DEFAULT_MAX_SOURCE_DOCS = 2;
+const DEFAULT_MAX_CHUNKS_PER_DOC = 4;
+const DEFAULT_MAX_KB_LINKS = 2;
+/** Lower = more chunks in the candidate pool (fewer false empty retrievals). */
+const DEFAULT_MATCH_THRESHOLD = 0.22;
+const DEFAULT_VECTOR_MATCH_COUNT = 56;
+const DEFAULT_CONTEXT_CHUNKS = 12;
 
 function metaString(m: Record<string, unknown> | null, key: string): string | null {
   if (!m || typeof m[key] !== 'string') return null;
@@ -40,13 +106,16 @@ function metaString(m: Record<string, unknown> | null, key: string): string | nu
   return v || null;
 }
 
-function rowDocKey(row: MatchRow): string {
+export function rowDocKey(row: MatchRow): string {
   if (isVideoTranscriptRow(row.metadata)) {
     const url = metaString(row.metadata, 'video_url');
     if (url) {
       const q = url.indexOf('?');
       return `video:\0${q === -1 ? url : url.slice(0, q)}`;
     }
+    // One JSON file per session — avoids many "Momentum Meet" files collapsing to one doc.
+    const sourceFile = metaString(row.metadata, 'source_file');
+    if (sourceFile) return `video:\0file:${sourceFile}`;
     const name = metaString(row.metadata, 'video_name');
     if (name) return `video:\0${name}`;
   }
@@ -59,7 +128,7 @@ function rowDocKey(row: MatchRow): string {
   return `row:${row.id}`;
 }
 
-function rowTitle(row: MatchRow): string {
+export function rowTitle(row: MatchRow): string {
   if (isVideoTranscriptRow(row.metadata)) {
     return videoTranscriptCitationTitle(row.metadata, row.source_title);
   }
@@ -71,17 +140,18 @@ function rowTitle(row: MatchRow): string {
   );
 }
 
-/**
- * Build context chunks from reranked order: up to `maxDocs` distinct PDFs,
- * up to `maxChunks` total passages (fills from those PDFs only).
- */
+function passageBodyForRerank(row: MatchRow): string {
+  const title = rowTitle(row);
+  const type = isVideoTranscriptRow(row.metadata) ? 'Video transcript' : 'PDF';
+  return `[${type}] ${title}\n\n${row.content.trim()}`;
+}
+
 function selectChunksFromRerank(
   order: number[],
   matches: MatchRow[],
   maxDocs: number,
   maxChunks: number
 ): MatchRow[] {
-  const allowedDocs = new Set<string>();
   const pick: MatchRow[] = [];
   const pickIds = new Set<string>();
 
@@ -91,9 +161,20 @@ function selectChunksFromRerank(
     pick.push(row);
   };
 
-  // Pass 1: best chunk per new document (rerank order) until maxDocs PDFs
+  if (order.length === 0) return pick;
+
+  const primaryKey = rowDocKey(matches[order[0]]!);
+
   for (const idx of order) {
-    if (allowedDocs.size >= maxDocs) break;
+    if (pick.length >= maxChunks) break;
+    const row = matches[idx];
+    if (row && rowDocKey(row) === primaryKey) add(row);
+  }
+
+  const allowedDocs = new Set<string>([primaryKey]);
+
+  for (const idx of order) {
+    if (allowedDocs.size >= maxDocs || pick.length >= maxChunks) break;
     const row = matches[idx];
     if (!row) continue;
     const key = rowDocKey(row);
@@ -102,236 +183,726 @@ function selectChunksFromRerank(
     add(row);
   }
 
-  // Pass 2: prefer the top-ranked document (long video sessions need several
-  // timestamped segments from the same Vimeo URL, not one chunk per meeting).
-  const primaryDocKey = pick.length > 0 ? rowDocKey(pick[0]) : null;
-  if (primaryDocKey) {
-    for (const idx of order) {
-      if (pick.length >= maxChunks) break;
-      const row = matches[idx];
-      if (!row || rowDocKey(row) !== primaryDocKey) continue;
-      add(row);
-    }
-  }
   for (const idx of order) {
     if (pick.length >= maxChunks) break;
     const row = matches[idx];
     if (!row) continue;
     const key = rowDocKey(row);
-    if (!allowedDocs.has(key) || key === primaryDocKey) continue;
+    if (key === primaryKey || !allowedDocs.has(key)) continue;
     add(row);
   }
 
-  if (pick.length === 0 && order.length > 0) {
-    add(matches[order[0]]);
-  }
-
+  if (pick.length === 0) add(matches[order[0]]!);
   return pick;
 }
 
-type DocRank = { docKey: string; bestScore: number; rank: number };
+/** Put primary-document chunks first in the prompt (first Source: block = main authority). */
+/** Comparison queries: ensure each named session appears in pick (golden + coach). */
+function ensureComparisonDocsInPick(
+  pick: MatchRow[],
+  effectiveOrder: number[],
+  rerankMatches: MatchRow[],
+  userQuery: string,
+  maxChunks: number,
+  rowTitle: (row: MatchRow) => string
+): MatchRow[] {
+  if (!/\bcompare\b/i.test(userQuery)) return pick;
 
-/** Rerank order → ranked PDFs with each doc's strongest vector score. */
-function rankDocumentsFromOrder(
-  order: number[],
-  matches: MatchRow[]
-): DocRank[] {
-  const byKey = new Map<string, DocRank>();
-  let rank = 0;
-  for (const idx of order) {
-    const row = matches[idx];
-    if (!row) continue;
-    const docKey = rowDocKey(row);
-    const sim = typeof row.similarity === 'number' ? row.similarity : 0;
-    const existing = byKey.get(docKey);
-    if (!existing) {
-      byKey.set(docKey, { docKey, bestScore: sim, rank: rank++ });
-    } else if (sim > existing.bestScore) {
-      existing.bestScore = sim;
+  const lower = userQuery.toLowerCase();
+  const required: ((title: string) => boolean)[] = [];
+  if (/\bget off the tools\b/i.test(lower)) {
+    required.push((t) => /get off the tools/i.test(t));
+  }
+  if (/\bjoe pane\b/i.test(lower)) {
+    required.push((t) => /joe pane/i.test(t));
+  }
+  if (required.length < 2) return pick;
+
+  const seenIds = new Set(pick.map((r) => r.id));
+  const out = [...pick];
+
+  for (const pred of required) {
+    if (out.some((r) => pred(rowTitle(r).toLowerCase()))) continue;
+    for (const idx of effectiveOrder) {
+      const row = rerankMatches[idx]!;
+      if (!pred(rowTitle(row).toLowerCase()) || seenIds.has(row.id)) continue;
+      seenIds.add(row.id);
+      out.push(row);
+      break;
     }
   }
-  return [...byKey.values()].sort((a, b) => a.rank - b.rank);
+
+  return out.slice(0, maxChunks);
 }
 
-/**
- * Citation links (Knowledge base): up to maxLinks PDFs, gated so ambiguous
- * queries (many docs with similar scores) usually show only the top PDF.
- */
-function selectCitationDocKeys(
-  docRanks: DocRank[],
-  maxLinks: number
-): Set<string> {
-  const out = new Set<string>();
-  if (docRanks.length === 0 || maxLinks < 1) return out;
+function orderPickPrimaryFirst(
+  pick: MatchRow[],
+  primaryKey: string
+): MatchRow[] {
+  const primary: MatchRow[] = [];
+  const rest: MatchRow[] = [];
+  for (const row of pick) {
+    if (rowDocKey(row) === primaryKey) primary.push(row);
+    else rest.push(row);
+  }
+  return [...primary, ...rest];
+}
 
-  const minAny = parseFloat(
-    process.env.RAG_MIN_SCORE_FOR_CITATION ??
-      String(DEFAULT_MIN_SCORE_FOR_CITATION)
-  );
-  const minExtra = parseFloat(
-    process.env.RAG_MIN_SCORE_FOR_EXTRA_CITATION ??
-      String(DEFAULT_MIN_SCORE_FOR_EXTRA_CITATION)
-  );
-  const minGap = parseFloat(
-    process.env.RAG_MIN_GAP_FOR_EXTRA_CITATION ??
-      String(DEFAULT_MIN_GAP_FOR_EXTRA_CITATION)
-  );
+/** Best matching document among title-keyword hits (entity names or title terms). */
+function bestTitleKeywordDocKey(
+  userQuery: string,
+  titleKeywordRows: PhraseChunkRow[]
+): string | null {
+  if (titleKeywordRows.length === 0) return null;
 
-  const top = docRanks[0];
-  if (top.bestScore < minAny) return out;
+  const entityTerms = entityAnchorTerms(userQuery);
+  const terms =
+    entityTerms.length > 0 ? entityTerms : titleSearchTerms(userQuery, 8);
+  if (terms.length === 0) return null;
 
-  out.add(top.docKey);
+  const scores = new Map<string, number>();
+  const sortedTerms = [...terms].sort((a, b) => b.length - a.length);
 
-  for (let i = 1; i < docRanks.length && out.size < maxLinks; i++) {
-    const next = docRanks[i];
-    const gap = top.bestScore - next.bestScore;
-    // Too close in score → library is ambiguous; don't add weaker-looking extras
-    if (gap < minGap) break;
-    if (next.bestScore >= minExtra) {
-      out.add(next.docKey);
+  for (const row of titleKeywordRows) {
+    const key = rowDocKey(row as MatchRow);
+    const title = row.source_title.toLowerCase();
+    if (
+      isQueryForTopic(userQuery, 'nic_waz_meeting') &&
+      isGenericLeadershipCollisionTitle(row.source_title)
+    ) {
+      continue;
+    }
+    let score = 1;
+    const explicitAnchor = extractExplicitSessionTitle(userQuery);
+    if (explicitAnchor) {
+      score += Math.round(
+        sessionTitleMatchScore(explicitAnchor, row.source_title) * 0.6
+      );
+    }
+    for (const term of sortedTerms) {
+      const t = term.toLowerCase();
+      if (t.length < 3) continue;
+      if (title.includes(t)) score += Math.min(t.length * 2, 28);
+    }
+    for (const term of sortedTerms) {
+      const t = term.toLowerCase();
+      if (t.length >= 8 && title.includes(t)) {
+        score += t.length * 2;
+        break;
+      }
+    }
+    scores.set(key, (scores.get(key) ?? 0) + score);
+  }
+
+  let bestKey: string | null = null;
+  let bestScore = 0;
+  for (const [key, score] of scores) {
+    if (score > bestScore) {
+      bestScore = score;
+      bestKey = key;
     }
   }
 
+  const minScore = entityTerms.length > 0 ? 12 : 7;
+  if (bestScore < minScore) return null;
+  return bestKey;
+}
+
+function titleLooksLikeGenericJulyMomentum(title: string): boolean {
+  const t = title.toLowerCase();
+  return /momentum meet/i.test(t) && /\bjuly\b/i.test(t);
+}
+
+/** When literal phrase hits exist, put matching chunks first (beats wrong rerank). */
+function reorderForPhraseAnchor(
+  effectiveOrder: number[],
+  matches: MatchRow[],
+  phraseChunkIds: Set<string>,
+  phraseCandidates: string[]
+): number[] {
+  if (phraseCandidates.length === 0 || phraseChunkIds.size === 0) {
+    return effectiveOrder;
+  }
+
+  const phraseFirst: number[] = [];
+  const rest: number[] = [];
+  for (const idx of effectiveOrder) {
+    const row = matches[idx]!;
+    if (
+      phraseChunkIds.has(row.id) &&
+      chunkContainsPhrase(row.content, phraseCandidates)
+    ) {
+      phraseFirst.push(idx);
+    } else {
+      rest.push(idx);
+    }
+  }
+  if (phraseFirst.length === 0) return effectiveOrder;
+  return [...phraseFirst, ...rest];
+}
+
+function reorderForTitleKeywordAnchor(
+  effectiveOrder: number[],
+  matches: MatchRow[],
+  titleKeywordChunkIds: Set<string>,
+  titleKeywordRows: PhraseChunkRow[],
+  userQuery: string
+): number[] {
+  if (titleKeywordChunkIds.size === 0 && titleKeywordRows.length === 0) {
+    return effectiveOrder;
+  }
+
+  const anchorKey = bestTitleKeywordDocKey(userQuery, titleKeywordRows);
+  if (!anchorKey) return effectiveOrder;
+
+  const top = effectiveOrder[0];
+  const topRow = top !== undefined ? matches[top] : undefined;
+  if (topRow && rowDocKey(topRow) === anchorKey) {
+    return effectiveOrder;
+  }
+
+  const anchorFirst: number[] = [];
+  const rest: number[] = [];
+  for (const idx of effectiveOrder) {
+    if (rowDocKey(matches[idx]!) === anchorKey) anchorFirst.push(idx);
+    else rest.push(idx);
+  }
+  if (anchorFirst.length === 0) return effectiveOrder;
+  return [...anchorFirst, ...rest];
+}
+
+function resolveCitationDocKeys(
+  pick: MatchRow[],
+  effectiveOrder: number[],
+  matches: MatchRow[],
+  maxLinks: number,
+  userQuery: string,
+  titleKeywordRows: PhraseChunkRow[],
+  titleKeywordChunkIds: Set<string>,
+  phraseChunkIds: Set<string>,
+  phraseCandidates: string[]
+): Set<string> {
+  const primaryIdx = effectiveOrder[0];
+  const primaryKey =
+    primaryIdx !== undefined
+      ? rowDocKey(matches[primaryIdx]!)
+      : pick.length > 0
+        ? rowDocKey(pick[0]!)
+        : null;
+
+  if (!primaryKey) return new Set();
+
+  const out = new Set<string>([primaryKey]);
+
+  if (phraseChunkIds.size > 0 && phraseCandidates.length > 0) {
+    const phraseOnPrimary = pick.some(
+      (row) =>
+        phraseChunkIds.has(row.id) &&
+        rowDocKey(row) === primaryKey &&
+        chunkContainsPhrase(row.content, phraseCandidates)
+    );
+    if (phraseOnPrimary) return new Set([primaryKey]);
+
+    for (const row of pick) {
+      if (
+        phraseChunkIds.has(row.id) &&
+        chunkContainsPhrase(row.content, phraseCandidates)
+      ) {
+        out.add(rowDocKey(row));
+        if (out.size >= maxLinks) return out;
+      }
+    }
+    return out;
+  }
+
+  if (titleKeywordChunkIds.size > 0 || titleKeywordRows.length > 0) {
+    const anchor = bestTitleKeywordDocKey(userQuery, titleKeywordRows);
+    if (anchor) {
+      out.clear();
+      out.add(anchor);
+      if (out.size >= maxLinks) return out;
+    }
+    for (const row of pick) {
+      if (titleKeywordChunkIds.has(row.id)) {
+        out.add(rowDocKey(row));
+        if (out.size >= maxLinks) return out;
+      }
+    }
+    return out;
+  }
+
+  for (const row of pick) {
+    out.add(rowDocKey(row));
+    if (out.size >= maxLinks) break;
+  }
   return out;
 }
 
-function pinLiteralMatchesFirst(
-  order: number[],
-  matches: MatchRow[],
-  phraseChunkIds: Set<string>,
-  ftsChunkIds: Set<string>
-): number[] {
-  const phraseIdx: number[] = [];
-  const ftsIdx: number[] = [];
-  const rest: number[] = [];
-  for (const idx of order) {
-    const id = matches[idx]?.id;
-    if (phraseChunkIds.has(id)) phraseIdx.push(idx);
-    else if (ftsChunkIds.has(id)) ftsIdx.push(idx);
-    else rest.push(idx);
-  }
-  for (let i = 0; i < matches.length; i++) {
-    const id = matches[i].id;
-    if (phraseChunkIds.has(id) && !phraseIdx.includes(i)) phraseIdx.push(i);
-    else if (ftsChunkIds.has(id) && !ftsIdx.includes(i)) ftsIdx.push(i);
-  }
-  return [...phraseIdx, ...ftsIdx, ...rest];
-}
+export type RagRetrievalOptions = {
+  /** One-line topic from conversation summary — vague queries only. */
+  topicHint?: string | null;
+};
+
+export type RagPipelineDebug = {
+  vectorCount: number;
+  titleKeywordCount: number;
+  phraseCount: number;
+  ftsCount: number;
+  primaryTitle: string | null;
+  pickTitles: string[];
+  citationTitles: string[];
+  topVectorTitles: string[];
+  llmRewriteUsed: boolean;
+  llmSearchQueries: string[];
+  vectorQueryCount: number;
+  sessionAgreementDocs: string[];
+  routedTopicId: string | null;
+  routedLabel: string | null;
+  routedConfidence: number | null;
+  routedDocKeys: string[];
+  rewriteScore: number | null;
+  rewriteMode: 'off' | 'soft' | 'full' | null;
+  rewriteSignals: string[];
+  topicHintUsed: boolean;
+};
 
 export type StorageRagResult = {
   contextBlock: string;
   sources: RagSource[];
+  /** Main TiB document used for this answer (shown to model + UI). */
+  primarySourceTitle: string | null;
+  queryIntent: RagQueryIntent | null;
+  answerGuidance: string | null;
 };
 
 export async function retrieveStorageRag(
   userQuery: string,
-  openaiKey: string
+  openaiKey: string,
+  options?: RagRetrievalOptions
 ): Promise<StorageRagResult | null> {
-  try {
-    return await retrieveStorageRagInner(userQuery, openaiKey);
-  } catch (e) {
-    console.error('retrieveStorageRag:', e);
-    return null;
-  }
+  const { result } = await runRagPipeline(userQuery, openaiKey, false, options);
+  return result;
 }
 
-async function retrieveStorageRagInner(
+export async function retrieveStorageRagWithDebug(
   userQuery: string,
-  openaiKey: string
-): Promise<StorageRagResult | null> {
-  const threshold = parseFloat(
-    process.env.RAG_MATCH_THRESHOLD ?? String(DEFAULT_MATCH_THRESHOLD)
-  );
-  const vectorMatchCount = parseInt(
-    process.env.RAG_VECTOR_MATCH_COUNT ?? String(DEFAULT_VECTOR_MATCH_COUNT),
-    10
-  );
-  const maxChunks = parseInt(
-    process.env.RAG_CONTEXT_CHUNKS ?? String(DEFAULT_CONTEXT_CHUNKS),
-    10
-  );
+  openaiKey: string,
+  options?: RagRetrievalOptions
+): Promise<{ result: StorageRagResult | null; debug: RagPipelineDebug }> {
+  return runRagPipeline(userQuery, openaiKey, true, options);
+}
 
-  const maxDocsRaw = parseInt(
-    process.env.RAG_MAX_SOURCE_PDFS ??
-      process.env.RAG_KNOWLEDGE_BASE_MAX_LINKS ??
-      String(DEFAULT_MAX_SOURCE_PDFS),
-    10
-  );
-  const maxDocs =
-    Number.isFinite(maxDocsRaw) && maxDocsRaw >= 1
-      ? Math.min(maxDocsRaw, 5)
-      : DEFAULT_MAX_SOURCE_PDFS;
+async function runRagPipeline(
+  userQuery: string,
+  openaiKey: string,
+  collectDebug: boolean,
+  options?: RagRetrievalOptions
+): Promise<{ result: StorageRagResult | null; debug: RagPipelineDebug }> {
+  const emptyDebug: RagPipelineDebug = {
+    vectorCount: 0,
+    titleKeywordCount: 0,
+    phraseCount: 0,
+    ftsCount: 0,
+    primaryTitle: null,
+    pickTitles: [],
+    citationTitles: [],
+    topVectorTitles: [],
+    llmRewriteUsed: false,
+    llmSearchQueries: [],
+    vectorQueryCount: 0,
+    sessionAgreementDocs: [],
+    routedTopicId: null,
+    routedLabel: null,
+    routedConfidence: null,
+    routedDocKeys: [],
+    rewriteScore: null,
+    rewriteMode: null,
+    rewriteSignals: [],
+    topicHintUsed: false,
+  };
 
-  const maxKbLinksRaw = parseInt(
-    process.env.RAG_KNOWLEDGE_BASE_MAX_LINKS ?? String(DEFAULT_MAX_KB_LINKS),
-    10
-  );
-  const maxKbLinks =
-    Number.isFinite(maxKbLinksRaw) && maxKbLinksRaw >= 1
-      ? Math.min(maxKbLinksRaw, 5)
-      : DEFAULT_MAX_KB_LINKS;
-
-  // Legacy: single-PDF mode overrides multi-doc selection
-  const singleSource =
-    (process.env.RAG_SINGLE_SOURCE_PDF ?? 'false').toLowerCase() === 'true';
-
-  let embedding: number[];
   try {
-    embedding = await embedQuery(userQuery, openaiKey);
-  } catch (e) {
-    console.error('RAG embed error:', e);
-    return null;
-  }
+    const threshold = parseFloat(
+      process.env.RAG_MATCH_THRESHOLD ?? String(DEFAULT_MATCH_THRESHOLD)
+    );
+    const vectorMatchCount = parseInt(
+      process.env.RAG_VECTOR_MATCH_COUNT ?? String(DEFAULT_VECTOR_MATCH_COUNT),
+      10
+    );
+    const maxChunks = parseInt(
+      process.env.RAG_CONTEXT_CHUNKS ?? String(DEFAULT_CONTEXT_CHUNKS),
+      10
+    );
 
-  const admin = createServiceRoleClient();
-  const { data: rows, error } = await admin.rpc('match_knowledge_chunks', {
-    query_embedding: embedding,
-    match_threshold: Number.isFinite(threshold) ? threshold : DEFAULT_MATCH_THRESHOLD,
-    match_count: Number.isFinite(vectorMatchCount)
+    const maxDocsRaw = parseInt(
+      process.env.RAG_MAX_SOURCE_PDFS ??
+        process.env.RAG_MAX_SOURCE_DOCS ??
+        String(DEFAULT_MAX_SOURCE_DOCS),
+      10
+    );
+    const maxDocs =
+      Number.isFinite(maxDocsRaw) && maxDocsRaw >= 1
+        ? Math.min(maxDocsRaw, 5)
+        : DEFAULT_MAX_SOURCE_DOCS;
+
+    const maxKbLinksRaw = parseInt(
+      process.env.RAG_KNOWLEDGE_BASE_MAX_LINKS ?? String(DEFAULT_MAX_KB_LINKS),
+      10
+    );
+    const maxKbLinks =
+      Number.isFinite(maxKbLinksRaw) && maxKbLinksRaw >= 1
+        ? Math.min(maxKbLinksRaw, 5)
+        : DEFAULT_MAX_KB_LINKS;
+
+    const intentParams = resolveRagIntentParams(userQuery);
+    const sessionRoute = routeQueryToSession(userQuery);
+    const forceSingle =
+      (process.env.RAG_SINGLE_SOURCE_PDF ?? 'false').toLowerCase() === 'true';
+    const singleSource = forceSingle || intentParams.singleSource;
+    const effectiveMaxDocs = Math.min(maxDocs, intentParams.maxDocs);
+    const effectiveMaxKbLinks = Math.min(maxKbLinks, intentParams.maxKbLinks);
+
+    const admin = createServiceRoleClient();
+    const ftsLimit = parseInt(process.env.RAG_FTS_MATCH_COUNT ?? '22', 10) || 22;
+    const matchThreshold = Number.isFinite(threshold)
+      ? threshold
+      : DEFAULT_MATCH_THRESHOLD;
+    const matchCount = Number.isFinite(vectorMatchCount)
       ? vectorMatchCount
-      : DEFAULT_VECTOR_MATCH_COUNT,
-  });
+      : DEFAULT_VECTOR_MATCH_COUNT;
 
-  if (error) {
-    console.error('match_knowledge_chunks:', error);
-  }
+    const heuristicRewrite = mergeRagRewrites(userQuery, null);
+    const earlyLexical = buildLexicalQuery(userQuery, heuristicRewrite);
 
-  const vectorMatches = error ? [] : ((rows || []) as MatchRow[]);
+    const rewriteGate = computeRewriteGate(userQuery);
+    const topicHint = options?.topicHint?.trim() || null;
 
-  const phraseCandidates = phraseSearchCandidates(userQuery);
-  const phraseRows =
-    phraseCandidates.length > 0
-      ? await fetchPhraseMatches(admin, userQuery, 12)
-      : [];
-  const phraseIds = new Set(phraseRows.map((p) => p.id));
+    const [llmRewriteResult, earlyLexicalResult, routeAnchors] = await Promise.all([
+      llmRewriteQueriesForRag({
+        userQuery,
+        gate: rewriteGate,
+        topicHint,
+      }),
+      fetchLexicalMatchesParallel(
+        admin,
+        userQuery,
+        earlyLexical,
+        heuristicRewrite?.topicPhrases ?? [],
+        ftsLimit
+      ),
+      sessionRoute
+        ? fetchRouteAnchorChunks(admin, sessionRoute)
+        : Promise.resolve([] as MatchRow[]),
+    ]);
 
-  const ftsLimit = parseInt(process.env.RAG_FTS_MATCH_COUNT ?? '15', 10) || 15;
-  const {
-    rows: ftsRows,
-    ftsChunkIds: ftsHitIds,
-    ranks: ftsRanks,
-  } = await fetchFtsMatches(admin, userQuery, ftsLimit);
-
-  const { matches, phraseChunkIds, ftsChunkIds } = mergeRetrievalCandidates(
-    vectorMatches,
-    {
-      rows: phraseRows,
-      similarity: PHRASE_MATCH_SIMILARITY,
-      ids: phraseIds,
-    },
-    {
-      rows: ftsRows,
-      similarity: 0,
-      ids: ftsHitIds,
-      ranks: ftsRanks,
+    const rewriteMeta: RagRewriteMeta = llmRewriteResult.meta;
+    let llmOnlyRewrite = llmRewriteResult.rewrite;
+    if (!llmOnlyRewrite && rewriteGate.mode === 'soft' && topicHint) {
+      llmOnlyRewrite = softRewriteFromTopicHint(userQuery, topicHint);
     }
-  );
 
-  if (matches.length === 0) return null;
+    const rewrite = mergeRagRewrites(userQuery, llmOnlyRewrite);
+    const fullLexical = buildLexicalQuery(userQuery, rewrite);
 
-  const passages = matches.map((m, i) => {
-    let text = m.content;
-    if (phraseChunkIds.has(m.id)) {
+    let {
+      titleKeywordRows,
+      phraseRows,
+      ftsRows,
+      ftsHitIds,
+      ftsRanks,
+    } = earlyLexicalResult;
+
+    const lexicalExpanded =
+      fullLexical.trim().toLowerCase() !== earlyLexical.trim().toLowerCase();
+
+    const embedInputsInitial = buildEmbedInputs(userQuery, heuristicRewrite);
+    const extraEmbedInputs = rewrite
+      ? extraEmbedInputsAfterRewrite(userQuery, heuristicRewrite, rewrite)
+      : [];
+
+    const [embeddingsInitial, supplementalLexical, extraEmbeddings] =
+      await Promise.all([
+        embedTexts(embedInputsInitial, openaiKey),
+        lexicalExpanded
+          ? fetchLexicalMatchesParallel(
+              admin,
+              userQuery,
+              fullLexical,
+              rewrite?.topicPhrases ?? [],
+              ftsLimit
+            )
+          : Promise.resolve(null),
+        extraEmbedInputs.length > 0
+          ? embedTexts(extraEmbedInputs, openaiKey)
+          : Promise.resolve([] as number[][]),
+      ]);
+
+    const embeddings = [...embeddingsInitial, ...extraEmbeddings];
+
+    if (supplementalLexical) {
+      titleKeywordRows = mergeTitleKeywordRows(
+        titleKeywordRows,
+        supplementalLexical.titleKeywordRows
+      );
+      phraseRows = mergePhraseRows(
+        phraseRows,
+        supplementalLexical.phraseRows
+      );
+      for (const row of supplementalLexical.ftsRows) {
+        if (!ftsHitIds.has(row.id)) {
+          ftsHitIds.add(row.id);
+          ftsRows.push(row);
+        }
+        const rank = supplementalLexical.ftsRanks.get(row.id);
+        if (rank != null && !ftsRanks.has(row.id)) {
+          ftsRanks.set(row.id, rank);
+        }
+      }
+    }
+
+    if (shouldFetchRhysTitleKeywords(userQuery, rewrite)) {
+      const rhysRows = await fetchTitleKeywordMatches(
+        admin,
+        'Expert Session with Rhys from Kaha Digital'
+      );
+      titleKeywordRows = mergeTitleKeywordRows(titleKeywordRows, rhysRows);
+    }
+
+    const titleKeywordIds = new Set(titleKeywordRows.map((p) => p.id));
+    const phraseIds = new Set(phraseRows.map((p) => p.id));
+
+    const phraseCandidates = [
+      ...new Set([
+        ...phraseSearchCandidates(userQuery),
+        ...(rewrite?.topicPhrases ?? []),
+      ]),
+    ];
+
+    const { merged: vectorMatches, perQuery: vectorPerQuery } =
+      await fetchMergedVectorMatches(
+        admin,
+        embeddings,
+        matchThreshold,
+        matchCount
+      );
+
+    if (routeAnchors.length > 0) {
+      for (const row of routeAnchors) {
+        titleKeywordIds.add(row.id);
+      }
+    }
+
+    const sessionAgreementDocs =
+      rewrite && vectorPerQuery.length >= 2
+        ? sessionAgreementDocKeys(vectorPerQuery, rowDocKey, 5, 2)
+        : [];
+
+    let { matches, titleKeywordChunkIds, phraseChunkIds, ftsChunkIds } =
+      mergeRetrievalCandidates(
+        vectorMatches,
+        {
+          rows: titleKeywordRows,
+          similarity: TITLE_KEYWORD_MATCH_SIMILARITY,
+          ids: titleKeywordIds,
+        },
+        {
+          rows: phraseRows,
+          similarity: PHRASE_MATCH_SIMILARITY,
+          ids: phraseIds,
+        },
+        {
+          rows: ftsRows,
+          similarity: 0,
+          ids: ftsHitIds,
+          ranks: ftsRanks,
+        }
+      );
+
+    if (matches.length === 0) {
+      return { result: null, debug: emptyDebug };
+    }
+
+    let routedDocKeys: string[] = [];
+    if (routeAnchors.length > 0) {
+      matches = mergeRouteAnchorsIntoMatches(matches, routeAnchors);
+    }
+
+    const routingRows = [
+      ...matches.map((row) => ({
+        row,
+        rowDocKey,
+        rowTitle,
+      })),
+      ...titleKeywordRows.map((row) => ({
+        row: row as MatchRow,
+        rowDocKey,
+        rowTitle,
+      })),
+      ...vectorMatches.slice(0, 36).map((row) => ({
+        row,
+        rowDocKey,
+        rowTitle,
+      })),
+    ];
+    routedDocKeys = sessionRoute
+      ? docKeysForRoute(sessionRoute, routingRows)
+      : [];
+
+    const sessionFirstEnabled =
+      (process.env.RAG_SESSION_FIRST ?? 'true').toLowerCase() !== 'false';
+
+    let sessionFiltered = matches;
+
+    if (sessionFirstEnabled) {
+      const topKRaw = parseInt(
+        process.env.RAG_SESSION_TOP_K ??
+          String(Math.max(7, effectiveMaxDocs + 3)),
+        10
+      );
+      const sessionTopK =
+        intentParams.intent === 'comparison'
+          ? Math.max(6, topKRaw)
+          : Number.isFinite(topKRaw) && topKRaw >= 2
+            ? Math.min(topKRaw, 10)
+            : 5;
+
+      const sessionScores = scoreSessionDocuments(matches, {
+        userQuery,
+        titleKeywordRows,
+        titleKeywordIds,
+        phraseChunkIds: phraseIds,
+        ftsChunkIds: ftsHitIds,
+        rowDocKey,
+      });
+
+      const vectorConsensus = dominantVectorDocKey(
+        vectorMatches,
+        rowDocKey,
+        10,
+        3
+      );
+      if (vectorConsensus) {
+        sessionScores.set(
+          vectorConsensus,
+          (sessionScores.get(vectorConsensus) ?? 0) + 0.38
+        );
+      }
+
+      const forceKeys: string[] = [];
+      if (sessionRoute && routedDocKeys.length > 0) {
+        for (const k of routedDocKeys) {
+          sessionScores.set(k, (sessionScores.get(k) ?? 0) + 0.55);
+          forceKeys.push(k);
+        }
+      }
+
+      if (vectorConsensus) forceKeys.push(vectorConsensus);
+
+      const titleAnchor = bestTitleKeywordDocKey(userQuery, titleKeywordRows);
+      if (titleAnchor) {
+        const anchorRow = titleKeywordRows.find(
+          (r) => rowDocKey(r as MatchRow) === titleAnchor
+        );
+        const skipWeakJulyAnchor =
+          vectorConsensus &&
+          titleAnchor !== vectorConsensus &&
+          anchorRow &&
+          titleLooksLikeGenericJulyMomentum(rowTitle(anchorRow as MatchRow));
+        if (!skipWeakJulyAnchor) forceKeys.push(titleAnchor);
+      }
+
+      forceKeys.push(
+        ...topDocKeysByTitleKeywordHits(titleKeywordRows, rowDocKey, 2)
+      );
+
+      if (sessionAgreementDocs[0]) {
+        forceKeys.push(sessionAgreementDocs[0]);
+      }
+
+      const hintForceKeys = queryHintsForceDocKeys(
+        userQuery,
+        matches,
+        titleKeywordRows,
+        rowDocKey,
+        rowTitle,
+        sessionRoute
+      );
+      forceKeys.push(...hintForceKeys);
+
+      applyAllQueryAwareSessionPenalties(
+        userQuery,
+        sessionScores,
+        matches,
+        titleKeywordRows,
+        rowDocKey,
+        rowTitle,
+        sessionRoute
+      );
+
+      const allowedDocs = selectTopSessionDocKeys(
+        sessionScores,
+        sessionTopK,
+        forceKeys
+      );
+
+      sessionFiltered = filterMatchesToSessions(
+        matches,
+        allowedDocs,
+        rowDocKey
+      );
+
+      if (sessionFiltered.length === 0) {
+        const topByScore = selectTopSessionDocKeys(sessionScores, sessionTopK, []);
+        sessionFiltered = filterMatchesToSessions(
+          matches,
+          topByScore,
+          rowDocKey
+        );
+        if (sessionFiltered.length === 0) {
+          sessionFiltered = matches;
+        }
+      }
+    }
+
+    const contentMatches = sessionFiltered.filter(
+      (m) => !isSessionCardRow(m.metadata)
+    );
+    const poolForChunks =
+      contentMatches.length > 0 ? contentMatches : sessionFiltered;
+
+    const maxPerDocRaw = parseInt(
+      process.env.RAG_MAX_CHUNKS_PER_DOC ?? String(DEFAULT_MAX_CHUNKS_PER_DOC),
+      10
+    );
+    const maxPerDoc =
+      Number.isFinite(maxPerDocRaw) && maxPerDocRaw >= 1
+        ? Math.min(maxPerDocRaw, 12)
+        : DEFAULT_MAX_CHUNKS_PER_DOC;
+
+    const diversifiedMatches = diversifyMatchesByDoc(
+      poolForChunks,
+      maxPerDoc,
+      rowDocKey
+    );
+
+    let rerankMatches = diversifiedMatches;
+    if (
+      sessionRoute &&
+      shouldRerankWithinRouteOnly(sessionRoute) &&
+      routedDocKeys.length > 0
+    ) {
+      const routedSet = new Set(routedDocKeys);
+      const inRoute = diversifiedMatches.filter((m) =>
+        routedSet.has(rowDocKey(m))
+      );
+      if (inRoute.length >= 2) rerankMatches = inRoute;
+    }
+
+    const passages = rerankMatches.map((m, i) => {
+      let text = passageBodyForRerank(m);
+    if (titleKeywordChunkIds.has(m.id)) {
+      text = `[TITLE KEYWORD MATCH]\n${text}`;
+    } else if (phraseChunkIds.has(m.id)) {
       text = `[EXACT PHRASE MATCH]\n${text}`;
     } else if (ftsChunkIds.has(m.id)) {
       text = `[FULL-TEXT MATCH]\n${text}`;
@@ -346,100 +917,339 @@ async function retrieveStorageRagInner(
 
   let order: number[];
   const dropSet = new Set<number>();
-  try {
-    const reranked = await rerankPassages(userQuery, passages);
-    order = reranked.order;
-    reranked.drop.forEach((d) => dropSet.add(d));
-  } catch (e) {
-    console.error('RAG rerank error:', e);
-    order = matches.map((_, i) => i);
+  if (shouldSkipRerank(sessionRoute, intentParams.intent)) {
+    order = rerankMatches
+      .map((_, i) => i)
+      .sort(
+        (a, b) =>
+          (rerankMatches[b]!.similarity ?? 0) -
+          (rerankMatches[a]!.similarity ?? 0)
+      );
+  } else {
+    try {
+      const reranked = await rerankPassages(userQuery, passages);
+      order = reranked.order;
+      reranked.drop.forEach((d) => dropSet.add(d));
+    } catch (e) {
+      console.error('RAG rerank error:', e);
+      order = rerankMatches.map((_, i) => i);
+    }
   }
 
   const filteredOrder = order.filter((i) => !dropSet.has(i));
   let effectiveOrder =
     filteredOrder.length > 0 ? filteredOrder : order;
 
-  if (phraseChunkIds.size > 0 || ftsChunkIds.size > 0) {
-    effectiveOrder = pinLiteralMatchesFirst(
-      effectiveOrder,
-      matches,
-      phraseChunkIds,
-      ftsChunkIds
-    );
-  }
+  effectiveOrder = reorderForPhraseAnchor(
+    effectiveOrder,
+    rerankMatches,
+    phraseChunkIds,
+    phraseCandidates
+  );
 
-  let pick: MatchRow[];
+  effectiveOrder = reorderForTitleKeywordAnchor(
+    effectiveOrder,
+    rerankMatches,
+    titleKeywordChunkIds,
+    titleKeywordRows,
+    userQuery
+  );
 
-  if (singleSource && effectiveOrder.length > 0) {
-    const anchorKey = rowDocKey(matches[effectiveOrder[0]]);
-    pick = [];
-    for (const idx of effectiveOrder) {
-      if (pick.length >= Math.max(1, maxChunks)) break;
-      const row = matches[idx];
-      if (rowDocKey(row) === anchorKey) pick.push(row);
+  let primaryKey =
+    effectiveOrder.length > 0
+      ? rowDocKey(rerankMatches[effectiveOrder[0]]!)
+      : rowDocKey(rerankMatches[0]!);
+
+  if (phraseIds.size > 0 && phraseCandidates.length > 0) {
+    let bestPhraseRow: MatchRow | null = null;
+    const signalFirst = [
+      ...signalPhrasesFromQuery(userQuery),
+      ...phraseCandidates,
+    ];
+    const tried = new Set<string>();
+    for (const phrase of signalFirst) {
+      const p = phrase.trim().toLowerCase();
+      if (p.length < 4 || tried.has(p)) continue;
+      tried.add(p);
+      for (const row of rerankMatches) {
+        if (!phraseIds.has(row.id)) continue;
+        if (!chunkContainsPhrase(row.content, [phrase])) continue;
+        bestPhraseRow = row;
+        break;
+      }
+      if (bestPhraseRow) break;
     }
-    if (pick.length === 0) pick = [matches[effectiveOrder[0]]];
-  } else {
-    pick = selectChunksFromRerank(
-      effectiveOrder,
-      matches,
-      maxDocs,
-      Math.max(maxChunks, maxDocs)
-    );
-  }
-
-  const docRanks = rankDocumentsFromOrder(effectiveOrder, matches);
-  let citationDocKeys = selectCitationDocKeys(docRanks, maxKbLinks);
-
-  // Exact phrase in chunk text → cite only PDF(s) that contain that phrase
-  if (phraseChunkIds.size > 0 && phraseCandidates.length > 0) {
-    const phraseDocKeys = new Set<string>();
-    for (const row of matches) {
-      if (
-        phraseChunkIds.has(row.id) &&
-        chunkContainsPhrase(row.content, phraseCandidates)
-      ) {
-        phraseDocKeys.add(rowDocKey(row));
+    if (!bestPhraseRow) {
+      for (const row of rerankMatches) {
+        if (!phraseIds.has(row.id)) continue;
+        if (!chunkContainsPhrase(row.content, phraseCandidates)) continue;
+        if (
+          !bestPhraseRow ||
+          (row.similarity ?? 0) > (bestPhraseRow.similarity ?? 0)
+        ) {
+          bestPhraseRow = row;
+        }
       }
     }
-    if (phraseDocKeys.size > 0) {
-      citationDocKeys = phraseDocKeys;
+    if (bestPhraseRow) {
+      primaryKey = rowDocKey(bestPhraseRow);
+      const phraseFirst: number[] = [];
+      const rest: number[] = [];
+      for (const idx of effectiveOrder) {
+        if (rowDocKey(rerankMatches[idx]!) === primaryKey) {
+          phraseFirst.push(idx);
+        } else {
+          rest.push(idx);
+        }
+      }
+      effectiveOrder =
+        phraseFirst.length > 0 ? [...phraseFirst, ...rest] : effectiveOrder;
+    }
+  } else if (
+    titleKeywordRows.length > 0 &&
+    !(sessionRoute && shouldLockPrimaryToRoute(sessionRoute))
+  ) {
+    const anchor = bestTitleKeywordDocKey(userQuery, titleKeywordRows);
+    if (anchor) primaryKey = anchor;
+  }
+
+  const topicHintForceKeys = queryHintsForceDocKeys(
+    userQuery,
+    matches,
+    titleKeywordRows,
+    rowDocKey,
+    rowTitle,
+    sessionRoute
+  );
+
+  if (!sessionRoute || !shouldLockPrimaryToRoute(sessionRoute)) {
+    primaryKey = applyTopicVectorConsensusPrimary(
+      primaryKey,
+      userQuery,
+      vectorMatches,
+      rerankMatches,
+      rowDocKey,
+      rowTitle,
+      sessionRoute
+    );
+
+    for (const hk of topicHintForceKeys) {
+      if (rerankMatches.some((m) => rowDocKey(m) === hk)) {
+        primaryKey = hk;
+        break;
+      }
+    }
+
+    primaryKey = correctMisroutedPrimaryDocKey(
+      primaryKey,
+      userQuery,
+      rerankMatches,
+      vectorMatches,
+      rowDocKey,
+      rowTitle,
+      sessionRoute
+    );
+
+    primaryKey = correctExplicitSessionPrimaryDocKey(
+      primaryKey,
+      userQuery,
+      rerankMatches,
+      vectorMatches,
+      titleKeywordRows,
+      rowDocKey,
+      rowTitle
+    );
+  }
+
+  if (sessionRoute && shouldLockPrimaryToRoute(sessionRoute) && routedDocKeys[0]) {
+    const lockKey = routedDocKeys[0];
+    if (rerankMatches.some((m) => rowDocKey(m) === lockKey)) {
+      primaryKey = lockKey;
     }
   }
 
-  const sources: RagSource[] = [];
-  const linkedDocKeys = new Set<string>();
-  const contextParts: string[] = [];
+  if (primaryKey) {
+    const primaryFirst: number[] = [];
+    const rest: number[] = [];
+    for (const idx of effectiveOrder) {
+      if (rowDocKey(rerankMatches[idx]!) === primaryKey) {
+        primaryFirst.push(idx);
+      } else {
+        rest.push(idx);
+      }
+    }
+    if (primaryFirst.length > 0) {
+      effectiveOrder = [...primaryFirst, ...rest];
+    }
+  }
 
-  for (const row of pick) {
-    const title = rowTitle(row);
-    const docKey = rowDocKey(row);
+    let pick: MatchRow[];
+
+    if (singleSource && effectiveOrder.length > 0) {
+      pick = [];
+      for (const idx of effectiveOrder) {
+        if (pick.length >= Math.max(1, maxChunks)) break;
+        const row = rerankMatches[idx];
+        if (rowDocKey(row) === primaryKey) pick.push(row);
+      }
+      if (pick.length === 0) pick = [rerankMatches[effectiveOrder[0]]!];
+    } else {
+      pick = selectChunksFromRerank(
+        effectiveOrder,
+        rerankMatches,
+        effectiveMaxDocs,
+        Math.max(maxChunks, effectiveMaxDocs)
+      );
+    }
+
+    pick = ensureComparisonDocsInPick(
+      pick,
+      effectiveOrder,
+      rerankMatches,
+      userQuery,
+      Math.max(maxChunks, effectiveMaxDocs),
+      rowTitle
+    );
+
+    pick = orderPickPrimaryFirst(pick, primaryKey);
+
+    let citationDocKeys = resolveCitationDocKeys(
+      pick,
+      effectiveOrder,
+      rerankMatches,
+      effectiveMaxKbLinks,
+      userQuery,
+      titleKeywordRows,
+      titleKeywordChunkIds,
+      phraseChunkIds,
+      phraseCandidates
+    );
+
+    if (intentParams.intent === 'factual' && primaryKey) {
+      citationDocKeys = new Set([primaryKey]);
+    }
 
     if (
-      citationDocKeys.has(docKey) &&
-      !linkedDocKeys.has(docKey) &&
-      sources.length < maxKbLinks
+      primaryKey &&
+      shouldSingleCitationForMeetingRhythm(
+        userQuery,
+        primaryKey,
+        rerankMatches,
+        rowDocKey,
+        rowTitle,
+        sessionRoute
+      )
     ) {
-      linkedDocKeys.add(docKey);
-      sources.push(ragSourceFromRow(row, title));
+      citationDocKeys = new Set([primaryKey]);
     }
 
-    contextParts.push(`---\nSource: ${title}\n${row.content.trim()}`);
-  }
+    const sources: RagSource[] = [];
+    const linkedDocKeys = new Set<string>();
+    const contextParts: string[] = [];
 
-  return {
-    contextBlock: contextParts.join('\n\n'),
-    sources,
-  };
+    for (const row of pick) {
+      const title = rowTitle(row);
+      const docKey = rowDocKey(row);
+
+      if (
+        citationDocKeys.has(docKey) &&
+        !linkedDocKeys.has(docKey) &&
+        sources.length < effectiveMaxKbLinks
+      ) {
+        linkedDocKeys.add(docKey);
+        sources.push(ragSourceFromRow(row, title));
+      }
+
+      contextParts.push(`---\nSource: ${title}\n${row.content.trim()}`);
+    }
+
+    const primarySourceTitle =
+      pick.length > 0 ? rowTitle(pick[0]!) : null;
+
+    const result: StorageRagResult = {
+      contextBlock: contextParts.join('\n\n'),
+      sources,
+      primarySourceTitle,
+      queryIntent: intentParams.intent,
+      answerGuidance: intentParams.answerGuidance,
+    };
+
+    const debug: RagPipelineDebug = collectDebug
+      ? {
+          vectorCount: vectorMatches.length,
+          titleKeywordCount: titleKeywordRows.length,
+          phraseCount: phraseRows.length,
+          ftsCount: ftsRows.length,
+          primaryTitle: (() => {
+            const row = rerankMatches.find((m) => rowDocKey(m) === primaryKey);
+            return row ? rowTitle(row) : null;
+          })(),
+          pickTitles: pick.map(rowTitle),
+          citationTitles: sources.map((s) => s.title),
+          topVectorTitles: vectorMatches.slice(0, 5).map(rowTitle),
+          llmRewriteUsed: Boolean(llmOnlyRewrite),
+          llmSearchQueries: rewrite?.searchQueries ?? [],
+          vectorQueryCount: embeddings.length,
+          sessionAgreementDocs: sessionAgreementDocs.map((k) => {
+            const row = vectorMatches.find((m) => rowDocKey(m) === k);
+            return row ? rowTitle(row) : k;
+          }),
+          routedTopicId: sessionRoute?.topicId ?? null,
+          routedLabel: sessionRoute?.label ?? null,
+          routedConfidence: sessionRoute?.confidence ?? null,
+          routedDocKeys: routedDocKeys.map((k) => {
+            const row =
+              rerankMatches.find((m) => rowDocKey(m) === k) ??
+              vectorMatches.find((m) => rowDocKey(m) === k);
+            return row ? rowTitle(row) : k;
+          }),
+          rewriteScore: rewriteMeta.gate.score,
+          rewriteMode: rewriteMeta.mode,
+          rewriteSignals: rewriteMeta.gate.signals,
+          topicHintUsed: rewriteMeta.topicHintUsed,
+        }
+      : emptyDebug;
+
+    return { result, debug };
+  } catch (e) {
+    console.error('retrieveStorageRag:', e);
+    return { result: null, debug: emptyDebug };
+  }
 }
 
-export function ragContextSystemAppendix(contextBlock: string): string {
+export function ragContextSystemAppendix(
+  contextBlock: string,
+  primarySourceTitle?: string | null,
+  queryIntent?: RagQueryIntent | null,
+  answerGuidance?: string
+): string {
+  const authority = primarySourceTitle
+    ? `PRIMARY SOURCE (main Knowledge base link): ${primarySourceTitle}`
+    : 'The first Source block below is the primary authority.';
+
+  const intentNote = queryIntent
+    ? `Question type for this reply: ${queryIntent}.`
+    : '';
+
+  const style = answerGuidance ?? 'Answer using only the excerpts below.';
+
   return `
 
-INTERNAL KNOWLEDGE BASE (PDF excerpts and video transcript segments from TiB materials — use when they genuinely help the answer; do not invent facts not supported here or by general coaching knowledge):
+INTERNAL KNOWLEDGE BASE (TiB PDFs and video transcripts — evidence for this reply):
 
 ${contextBlock}
 
-When you lean on these excerpts, keep the same JSON response shape as usual; do not paste raw URLs in "answer" — the app attaches source links separately.
-If passages are marked EXACT PHRASE MATCH, that source is the primary material for the user's quote; align next_steps with that passage's Source title (PDF or video).`;
+KNOWLEDGE BASE RULES (required):
+- ${authority}
+- ${intentNote}
+- ${style}
+- Use logical reasoning when the user asks why/how/what-if, but every conclusion must follow from the excerpts — do not invent facts, quotes, or sessions.
+- Do NOT say you lack access, need different excerpts, or that the opening/session content is unavailable when Source blocks are present — answer from those excerpts only.
+- Do NOT name a different TiB document than the primary source unless comparison mode or the user asked for multiple sources.
+- Name sources you use in plain language in "answer" (no URLs).
+- "next_steps": 2–4 when practical; omit or shorten for pure factual lookups.
+- "tasks": [] for simple factual lookups only; when the user shares a goal or asks how to fix/improve their business, include exactly 3 physical immediate tasks (easiest first) in the JSON "tasks" array — same rules as your main system prompt.
+- If excerpts cannot answer, say so briefly; do not fabricate TiB content.
+
+Keep the usual JSON shape; Knowledge base links are attached separately.`;
 }

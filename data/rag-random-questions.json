@@ -1,0 +1,63 @@
+{
+  "generatedAt": "2026-06-04T06:30:03.826Z",
+  "seed": 42,
+  "count": 8,
+  "goldenRatio": 0.25,
+  "questions": [
+    {
+      "id": "json-How To Cashflow Forecast-174813",
+      "source": "json",
+      "session": "How To: Cashflow Forecast",
+      "file": "How To Cashflow Forecast.json",
+      "query": "Summarise the practical advice from How To: Cashflow Forecast on started month added which ending."
+    },
+    {
+      "id": "json-Expert Session with Dani-472317",
+      "source": "json",
+      "session": "Expert Session with Dani Ferrier",
+      "file": "Expert Session with Dani Ferrier.json",
+      "query": "My question is about creating meaningful connections clients systems — what does TiB material in the knowledge base say?"
+    },
+    {
+      "id": "golden-hard-eofy-webinar",
+      "source": "golden",
+      "session": "hard-eofy-webinar",
+      "query": "EOFY webinar what tradies need before end of financial year"
+    },
+    {
+      "id": "json-Expert Session with Kris-686612",
+      "source": "json",
+      "session": "Expert Session with Kristy Lee",
+      "file": "Expert Session with Kristy Lee.json",
+      "query": "I'm a tradie — how does Expert Session with Kristy Lee recommend handling cause billion other things habit?"
+    },
+    {
+      "id": "json-5 Ideas for Toolbox Talk-51209",
+      "source": "json",
+      "session": "5 Ideas for Toolbox Talk",
+      "file": "5 Ideas for Toolbox Talk.json",
+      "query": "My question is about humor tradies business lighten people — what does TiB material in the knowledge base say?"
+    },
+    {
+      "id": "json-Canva with Sugarpop Soci-185689",
+      "source": "json",
+      "session": "Canva with Sugarpop Social",
+      "file": "Canva with Sugarpop Social.json",
+      "query": "What does the TiB session \"Canva with Sugarpop Social\" say about there instagram throw worked nicole?"
+    },
+    {
+      "id": "json-Managing Debtors-842688",
+      "source": "json",
+      "session": "Managing Debtors",
+      "file": "Managing Debtors.json",
+      "query": "According to Managing Debtors, what should a tradie know about tradies clear debtors process place?"
+    },
+    {
+      "id": "json-momentum_meet_march_11-37439",
+      "source": "json",
+      "session": "Momentum Meet March 11",
+      "file": "momentum_meet_march_11.json",
+      "query": "In Momentum Meet March 11, they mentioned: \"Okay, if you've still got your ad, I'd give it a refresh and throw\" — what is the main takeaway for my business?"
+    }
+  ]
+}

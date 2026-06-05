@@ -1,5 +1,6 @@
 import type { PhraseChunkRow } from '@/lib/ai/rag-phrase-search';
 import { PHRASE_MATCH_SIMILARITY } from '@/lib/ai/rag-phrase-search';
+import { TITLE_KEYWORD_MATCH_SIMILARITY } from '@/lib/ai/rag-title-keyword-search';
 import { ftsRankToSimilarity } from '@/lib/ai/rag-fts-search';
 
 export type MatchRow = {
@@ -19,15 +20,17 @@ type LiteralHit = {
 };
 
 /**
- * Merge vector + phrase (ILIKE) + FTS hits.
- * Order: phrase → FTS → vector (by similarity).
+ * Merge vector + title keyword + phrase (ILIKE) + FTS hits.
+ * Order: title keyword → phrase → FTS → vector (by similarity).
  */
 export function mergeRetrievalCandidates(
   vectorRows: MatchRow[],
+  titleKeyword: LiteralHit,
   phrase: LiteralHit,
   fts: LiteralHit & { ranks: Map<string, number> }
 ): {
   matches: MatchRow[];
+  titleKeywordChunkIds: Set<string>;
   phraseChunkIds: Set<string>;
   ftsChunkIds: Set<string>;
 } {
@@ -53,31 +56,38 @@ export function mergeRetrievalCandidates(
     }
   }
 
+  applyLiteral(titleKeyword.rows, titleKeyword.similarity);
   applyLiteral(phrase.rows, phrase.similarity);
   for (const p of fts.rows) {
     const rank = fts.ranks.get(p.id) ?? 0;
     applyLiteral([p], ftsRankToSimilarity(rank));
   }
 
+  const titleFirst = titleKeyword.rows
+    .map((p) => byId.get(p.id))
+    .filter((r): r is MatchRow => !!r);
+
   const phraseFirst = phrase.rows
+    .filter((p) => !titleKeyword.ids.has(p.id))
     .map((p) => byId.get(p.id))
     .filter((r): r is MatchRow => !!r);
 
   const ftsFirst = fts.rows
-    .filter((p) => !phrase.ids.has(p.id))
+    .filter((p) => !titleKeyword.ids.has(p.id) && !phrase.ids.has(p.id))
     .map((p) => byId.get(p.id))
     .filter((r): r is MatchRow => !!r);
 
-  const used = new Set([...phrase.ids, ...fts.ids]);
+  const used = new Set([...titleKeyword.ids, ...phrase.ids, ...fts.ids]);
   const rest = [...byId.values()]
     .filter((r) => !used.has(r.id))
     .sort((a, b) => b.similarity - a.similarity);
 
   return {
-    matches: [...phraseFirst, ...ftsFirst, ...rest],
+    matches: [...titleFirst, ...phraseFirst, ...ftsFirst, ...rest],
+    titleKeywordChunkIds: titleKeyword.ids,
     phraseChunkIds: phrase.ids,
     ftsChunkIds: fts.ids,
   };
 }
 
-export { PHRASE_MATCH_SIMILARITY };
+export { PHRASE_MATCH_SIMILARITY, TITLE_KEYWORD_MATCH_SIMILARITY };
