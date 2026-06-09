@@ -18,10 +18,12 @@ import {
   Check,
   FileText,
 } from 'lucide-react';
+import type { ChatRagPayload } from '@/lib/ai/chat-rag-payload';
 import { parseChatStreamLine } from '@/lib/ai/chat-stream';
 import {
   coachJsonPastAnswerField,
   extractStreamingAnswer,
+  parseAIResponse,
   tryParseStreamingCoachJson,
 } from '@/lib/ai/coach';
 import { AIResponse, TaskFromAI } from '@/lib/types';
@@ -381,21 +383,81 @@ export default function CoachChat({
         role: m.role,
         content: m.role === 'assistant' && m.parsed ? m.parsed.answer : m.content,
       }));
-      const res = await fetch('/api/chat', {
+
+      const authFetch = (url: string, init: RequestInit) =>
+        fetch(url, {
+          ...init,
+          credentials: 'same-origin',
+          redirect: 'manual',
+        });
+
+      const assertOkSession = (res: Response) => {
+        if (res.type === 'opaqueredirect' || (res.status >= 300 && res.status < 400)) {
+          throw new Error(
+            'Your session expired. Please refresh the page and sign in again.'
+          );
+        }
+      };
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantId
+            ? { ...m, streamStatus: 'Searching knowledge base…' }
+            : m
+        )
+      );
+
+      let ragPayload: ChatRagPayload | null = null;
+      const ragRes = await authFetch('/api/rag/retrieve', {
         method: 'POST',
-        credentials: 'same-origin',
-        redirect: 'manual',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: trimmed,
+          conversationId: convId,
+        }),
+      });
+      assertOkSession(ragRes);
+      if (ragRes.ok) {
+        const ragJson = (await ragRes.json()) as { rag?: ChatRagPayload | null };
+        ragPayload = ragJson.rag ?? null;
+        if (ragPayload?.sources?.length) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? {
+                    ...m,
+                    parsed: {
+                      answer: '',
+                      next_steps: [],
+                      tasks: [],
+                      resources: [],
+                      rag_sources: ragPayload!.sources,
+                    },
+                  }
+                : m
+            )
+          );
+        }
+      }
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantId
+            ? { ...m, streamStatus: 'Writing your answer…' }
+            : m
+        )
+      );
+
+      const res = await authFetch('/api/chat', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: historyForApi,
           conversationId: convId,
+          ragPayload,
         }),
       });
-      if (res.type === 'opaqueredirect' || (res.status >= 300 && res.status < 400)) {
-        throw new Error(
-          'Your session expired. Please refresh the page and sign in again.'
-        );
-      }
+      assertOkSession(res);
 
       const contentType = res.headers.get('content-type') ?? '';
       const isStream = contentType.includes('ndjson');
@@ -525,8 +587,23 @@ export default function CoachChat({
         }
       }
 
+      if (!finalData && rawJson.trim()) {
+        finalData = parseAIResponse(rawJson);
+        if (finalData.answer) {
+          patchAssistant({
+            content: finalData.answer,
+            parsed: finalData,
+            streaming: false,
+            finishingStructured: false,
+            streamStatus: undefined,
+          });
+        }
+      }
+
       if (!finalData) {
-        throw new Error('The response ended before the coach finished replying.');
+        throw new Error(
+          'The response ended before the coach finished replying. On Netlify this usually means the serverless function hit its time limit — ask Netlify support to raise the timeout to 26s (Pro plan) and set CHAT_RAG_DEADLINE_MS=12000 in site env vars.'
+        );
       }
 
       const assistantMsg: ChatMessage = {

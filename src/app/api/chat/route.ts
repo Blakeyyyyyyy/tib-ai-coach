@@ -8,8 +8,11 @@ import {
   consumeAnthropicSse,
 } from '@/lib/ai/chat-stream';
 import {
+  applyRagPayloadToSystem,
+  type ChatRagPayload,
+} from '@/lib/ai/chat-rag-payload';
+import {
   retrieveStorageRag,
-  ragContextSystemAppendix,
 } from '@/lib/ai/rag-storage';
 import { buildRetrievalTopicHint } from '@/lib/ai/rag-rewrite-gate';
 import {
@@ -21,6 +24,36 @@ import {
 import { createClient } from '@/lib/supabase/server';
 import type { RagSource } from '@/lib/types';
 
+function parseRagDeadlineMs(): number {
+  const n = parseInt(process.env.CHAT_RAG_DEADLINE_MS ?? '0', 10);
+  return Number.isFinite(n) && n >= 2000 ? Math.min(n, 25_000) : 0;
+}
+
+async function retrieveWithDeadline(
+  query: string,
+  openaiKey: string,
+  topicHint: string | null,
+  deadlineMs: number
+) {
+  if (deadlineMs <= 0) {
+    return retrieveStorageRag(query, openaiKey, { topicHint });
+  }
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), deadlineMs);
+  });
+
+  try {
+    return await Promise.race([
+      retrieveStorageRag(query, openaiKey, { topicHint }),
+      timeout,
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
@@ -31,7 +64,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { messages, conversationId } = await request.json();
+    const body = (await request.json()) as {
+      messages?: { role: string; content: string }[];
+      conversationId?: string | null;
+      ragPayload?: ChatRagPayload | null;
+    };
+    const { messages, conversationId, ragPayload } = body;
 
     if (!process.env.ANTHROPIC_API_KEY) {
       return NextResponse.json(
@@ -49,7 +87,7 @@ export async function POST(request: NextRequest) {
         ? Math.min(maxHistoryRaw, 40)
         : 20;
 
-    const chatMessages = messages as { role: string; content: string }[];
+    const chatMessages = (messages ?? []) as { role: string; content: string }[];
     const memorySummary = await loadConversationMemory(conversationId, user.id);
 
     const anthropicMessages = selectCoachMessages(
@@ -68,6 +106,8 @@ export async function POST(request: NextRequest) {
       | { role: string; content: string }
       | undefined;
 
+    const splitRagMode = Object.prototype.hasOwnProperty.call(body, 'ragPayload');
+
     const stream = new ReadableStream({
       async start(controller) {
         const send = (event: Parameters<typeof encodeChatStreamEvent>[0]) => {
@@ -75,7 +115,11 @@ export async function POST(request: NextRequest) {
         };
 
         try {
-          if (
+          if (splitRagMode) {
+            const applied = applyRagPayloadToSystem(systemPrompt, ragPayload);
+            systemPrompt = applied.systemPrompt;
+            ragSources = applied.sources;
+          } else if (
             lastUser?.content &&
             process.env.OPENAI_API_KEY &&
             process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -86,19 +130,23 @@ export async function POST(request: NextRequest) {
                 memorySummary,
                 lastUser.content
               );
-              const rag = await retrieveStorageRag(
+              const ragDeadlineMs = parseRagDeadlineMs();
+              const rag = await retrieveWithDeadline(
                 lastUser.content,
                 process.env.OPENAI_API_KEY,
-                { topicHint }
+                topicHint,
+                ragDeadlineMs
               );
               if (rag?.contextBlock) {
-                systemPrompt += ragContextSystemAppendix(
-                  rag.contextBlock,
-                  rag.primarySourceTitle,
-                  rag.queryIntent,
-                  rag.answerGuidance ?? undefined
-                );
-                ragSources = rag.sources;
+                const applied = applyRagPayloadToSystem(systemPrompt, {
+                  contextBlock: rag.contextBlock,
+                  sources: rag.sources,
+                  primarySourceTitle: rag.primarySourceTitle,
+                  queryIntent: rag.queryIntent,
+                  answerGuidance: rag.answerGuidance,
+                });
+                systemPrompt = applied.systemPrompt;
+                ragSources = applied.sources;
               }
             } catch (e) {
               console.error('Storage RAG skipped:', e);
@@ -180,7 +228,7 @@ export async function POST(request: NextRequest) {
           send({
             type: 'done',
             parsed,
-            conversationId,
+            conversationId: conversationId ?? undefined,
           });
 
           void refreshConversationSummaryIfNeeded(
