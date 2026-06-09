@@ -1,0 +1,147 @@
+{
+  "version": 1,
+  "description": "Generic/open-ended RAG eval — intent family + primary source. Run: npm run rag:eval",
+  "minPassRate": 0.9,
+  "cases": [
+    {
+      "id": "generic-pricing-1",
+      "query": "I need help with i'm losing money on projects — how do i fix pricing? in my trade business",
+      "expectIntent": "job_pricing_margin",
+      "expectPrimaryAny": ["Backcosting", "Hourly Rate", "Five Profit Levers"],
+      "expectPrimaryNone": ["Using AI in your Trade", "Financial Jam with Jackson"]
+    },
+    {
+      "id": "generic-pricing-2",
+      "query": "Jobs look busy but I'm not making profit — what should I check first?",
+      "expectIntent": "job_pricing_margin",
+      "expectPrimaryAny": ["Backcosting", "Hourly Rate", "Five Profit Levers", "Financial Dashboard"],
+      "expectPrimaryNone": ["Using AI"]
+    },
+    {
+      "id": "generic-systems-1",
+      "query": "We're growing fast and everything still runs through me. What systems should we set up first in a trade business?",
+      "expectIntent": "systems_where_to_start",
+      "expectPrimaryAny": ["Systemology Expert Session", "Tradie Systems Map", "7 Myths of Systemising"],
+      "expectPrimaryNone": ["MindMeister", "Using AI in your Trade"]
+    },
+    {
+      "id": "generic-systems-2",
+      "query": "Where do I start with systemising when I'm still on the tools every day?",
+      "expectIntent": "systems_where_to_start",
+      "expectPrimaryAny": ["Systemology", "Tradie Systems Map", "7 Myths"],
+      "expectPrimaryNone": ["MindMeister"]
+    },
+    {
+      "id": "generic-cashflow-1",
+      "query": "Quiet months kill us — how do tradies handle cash flow in slow seasons?",
+      "expectIntent": "cashflow_slow_months",
+      "expectPrimaryAny": ["Cashflow Forecast", "Cash Flow", "Reduce Cash Flow Stress", "Quick Cash Flow"],
+      "expectPrimaryNone": ["Financial Jam with Jackson", "Marketing to Survive"]
+    },
+    {
+      "id": "generic-cashflow-2",
+      "query": "How can I improve cash flow when work dries up between jobs?",
+      "expectIntent": "cashflow_slow_months",
+      "expectPrimaryAny": ["Cashflow", "Cash Flow", "Quick Cash Flow"],
+      "expectPrimaryNone": ["Griffiths"]
+    },
+    {
+      "id": "generic-hiring-1",
+      "query": "help me write a job ad for a new apprentice in my trade business",
+      "expectIntent": "hire_apprentice",
+      "expectPrimaryAny": ["Sexy Job Ad", "Hiring Cheat", "HR for Tradies"],
+      "expectPrimaryNone": ["Position Description Guide", "Setting Boundaries with Apprentice"]
+    },
+    {
+      "id": "generic-hiring-2",
+      "query": "How do I hire my first apprentice without picking the wrong person?",
+      "expectIntent": "hire_apprentice",
+      "expectPrimaryAny": ["HR for Tradies", "Hiring Cheat", "apprentice"],
+      "expectPrimaryNone": ["Trade-O"]
+    },
+    {
+      "id": "generic-marketing-1",
+      "query": "Website gets hits but the phone never rings — what should I fix?",
+      "expectIntent": "marketing_rhys",
+      "expectPrimaryAny": ["Rhys", "Kaha Digital"],
+      "expectPrimaryNone": ["Griffiths", "Canva"]
+    },
+    {
+      "id": "generic-delegation-1",
+      "query": "I'm stuck on the tools and can't step back — how do tradies actually delegate?",
+      "expectIntent": "joe_delegation",
+      "expectPrimaryAny": ["Get Off the Tools", "Delegation"],
+      "expectPrimaryNone": ["Leadership Skills"]
+    },
+    {
+      "id": "generic-quotes-1",
+      "query": "Should I charge for quotes or keep them free to win work?",
+      "expectIntent": "charge_quotes",
+      "expectPrimaryAny": ["charge for quotes", "Say No", "Crappy Jobs"],
+      "expectPrimaryNone": ["HazardCo"]
+    },
+    {
+      "id": "generic-cash-bank-1",
+      "query": "Bank account looks fine so why do people say my cash flow is a problem?",
+      "expectIntent": "cash_bank_balance",
+      "expectPrimaryAny": ["Cash vs Accrual", "WTF is Cash"],
+      "expectPrimaryNone": ["Profit First", "Get Ready for EOFY"]
+    },
+    {
+      "id": "generic-focus-1",
+      "query": "I keep dropping my daily routine after a bad week on site — what does TiB say about getting back on track?",
+      "expectIntent": "daily_focus",
+      "expectPrimaryAny": ["Finding Daily Focus"],
+      "expectPrimaryNone": ["Clea Jones", "Mental Roadblocks"]
+    },
+    {
+      "id": "generic-price-objection-1",
+      "query": "Customer said my renovation quote is too expensive — what do I say without discounting?",
+      "expectIntent": ["pdf_price_objection", "charge_quotes"],
+      "expectPrimaryAny": ["Price Objection", "Objection", "Screen Customers", "charge for quotes"],
+      "expectPrimaryNone": ["HazardCo"]
+    },
+    {
+      "id": "generic-debtors-1",
+      "query": "Invoices sit overdue for months — is there a simple chasing process for tradies?",
+      "expectIntent": "pdf_debtor_management",
+      "expectPrimaryAny": ["Debtor Management"],
+      "expectPrimaryNone": ["Managing Debtors", "Katie Crismale"]
+    },
+    {
+      "id": "generic-content-1",
+      "query": "I've got years of on-site stories but never post content — where do I start without sounding like a guru?",
+      "expectIntent": "content_storytelling",
+      "expectPrimaryAny": ["Sam Winch", "Turning Your Ideas Into Content"],
+      "expectPrimaryNone": ["Trade-O", "Renee Boardman"]
+    },
+    {
+      "id": "generic-meeting-1",
+      "query": "Weekly team meeting but the same problems keep coming up — how do I run it properly?",
+      "expectIntent": "nic_waz_meeting",
+      "expectPrimaryAny": ["Nic & Waz", "Meeting Structure"],
+      "expectPrimaryNone": ["Leadership Skills", "Momentum Meet"]
+    },
+    {
+      "id": "generic-fy-1",
+      "query": "Why do tradies feel hopeful at the start of July even when last year was rough?",
+      "expectIntent": "fy_hopeful",
+      "expectPrimaryAny": ["Two Drunk Accountants", "Financial Jam with Two Drunk"],
+      "expectPrimaryNone": ["Momentum Meet 16 July", "Get Ready for EOFY"]
+    },
+    {
+      "id": "generic-eofy-1",
+      "query": "What should I do before end of financial year as a tradie business owner?",
+      "expectIntent": "eofy_webinar",
+      "expectPrimaryAny": ["Get Ready for EOFY", "EOFY Webinar"],
+      "expectPrimaryNone": ["Marketing to Survive Tough Times"]
+    },
+    {
+      "id": "generic-systemology-1",
+      "query": "My apprentice ignores the checklist — how do I get systems to stick?",
+      "expectIntent": ["systemology", "systems_where_to_start"],
+      "expectPrimaryAny": ["Systemology Expert Session", "Systemology"],
+      "expectPrimaryNone": ["MindMeister", "Mini Systems Sprint"]
+    }
+  ]
+}

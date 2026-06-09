@@ -1,62 +1,8 @@
-Golden RAG report — 2026-06-05T13:12:39.622Z
+Golden RAG report — 2026-06-05T20:02:47.313Z
 
-[PASS] easy-joe-improv (easy) — primary OK: Expert Webinar with Joe Pane (20:18–20:48)
-
-[PASS] easy-rhys-marketing (easy) — primary OK: Expert Session with Rhys from Kaha Digital (00:07–00:31)
-
-[PASS] easy-systemology (easy) — primary OK: Systemology Expert Session (00:56–01:17)
-
-[PASS] easy-cashflow (easy) — primary OK: Cash Flow for Tradies with Katie Crismale-Marshall (00:03–00:27)
-
-[PASS] easy-get-off-tools (easy) — primary OK: Get Off the Tools Guide Updated
-
-[PASS] hard-fy-hopeful-paraphrase (hard) — primary OK: Financial Jam with Two Drunk Accountants (00:00–00:28)
-
-[PASS] hard-website-no-calls-no-name (hard) — primary OK: Expert Session with Rhys from Kaha Digital (00:07–00:31)
-
-[PASS] hard-systems-apprentice (hard) — primary OK: Systemology Expert Session (00:56–01:17)
-
-[PASS] hard-charge-for-quotes (hard) — primary OK: Should You Charge For Quotes (00:00–00:07)
-
-[PASS] hard-cash-vs-accrual (hard) — primary OK: WTF is Cash vs Accrual and why you MUST know (00:30–01:04)
-
-[PASS] hard-momentum-kitchen-warranty (hard) — primary OK: Momentum Meet (recording 1133307969) (01:50–02:07)
-
-[PASS] hard-nicole-three-tasks (hard) — primary OK: Q&A Expert Session with Nicole Davidson (07:24–07:52)
-
-[PASS] hard-compare-delegation-joe (hard) — pick includes: Get Off the Tools, Joe Pane
-
-[PASS] hard-momentum-say-no-fitout (hard) — primary OK: How To Say No To Crappy Jobs (09:06–09:31)
-
-[PASS] hard-drunk-accountants-fragments (hard) — primary OK: Financial Jam with Two Drunk Accountants (00:00–00:28)
-
-[PASS] hard-hire-apprentice (hard) — primary OK: HR for Tradies in Business (51:37–52:12)
-
-[PASS] hard-price-too-high (hard) — primary OK: 10 Questions That Can Be Used To Screen Customers
-
-[PASS] hard-masogi-friday (hard) — primary OK: Momentum Meet (legacy archive) (00:00–00:31)
-
-[PASS] hard-rhys-one-word (hard) — primary OK: Expert Session with Rhys from Kaha Digital (00:07–00:31)
-
-[PASS] hard-griffiths-referrals (hard) — primary OK: Michael Griffiths Expert Session on Referral Based Marketing (19:14–19:41)
-
-[PASS] hard-fy-hopeful-explicit (hard) — primary OK: Financial Jam with Two Drunk Accountants (00:00–00:28)
-
-[PASS] hard-eofy-webinar (hard) — primary OK: Get Ready for EOFY Webinar (00:00–00:32)
-
-[PASS] hard-daily-focus-dropout (hard) — primary OK: Finding Daily Focus (00:32–00:57)
-
-[PASS] hard-cash-bank-balance (hard) — primary OK: WTF is Cash vs Accrual and why you MUST know (00:30–01:04)
-
-[PASS] hard-content-sam-winch (hard) — primary OK: Turning Your Ideas Into Content with Sam Winch (00:00–00:30)
-
-[PASS] hard-joe-pane-improv (hard) — primary OK: Expert Webinar with Joe Pane (20:18–20:48)
-
-[PASS] hard-momentum-june-explicit (hard) — primary OK: Momentum Meet 25 June 2025 (11:39–12:22)
-
-[PASS] hard-nic-waz-meeting (hard) — primary OK: Done With You Session with Nic & Waz on Meeting Structure (10:01–10:26)
+[PASS] hard-hire-apprentice (hard) — primary OK: HR for Tradies in Business (10:50–11:09)
 
 === SUMMARY ===
-Pass: 28 / 28 required (100.0%)
-Easy:   5/5
-Hard:   23/23
+Pass: 1 / 1 required (100.0%)
+Easy:   0/0
+Hard:   1/1

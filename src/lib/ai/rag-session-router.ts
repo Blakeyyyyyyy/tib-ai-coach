@@ -1,6 +1,7 @@
 import type { RagQueryIntent } from '@/lib/ai/rag-query-mode';
 import type { MatchRow } from '@/lib/ai/rag-merge';
 import type { PhraseChunkRow } from '@/lib/ai/rag-phrase-search';
+import type { RagIntentRoute } from '@/lib/ai/rag-intent-router';
 import {
   getTopicById,
   scoreTopicsForQuery,
@@ -33,21 +34,18 @@ const ROUTE_RERANK_ONLY = parseEnvFloat(
 );
 const SKIP_RERANK_CONFIDENCE = parseEnvFloat(
   process.env.RAG_SKIP_RERANK_CONFIDENCE,
-  0.85
+  0.92
 );
 
-export function routeQueryToSession(userQuery: string): SessionRoute | null {
-  const ranked = scoreTopicsForQuery(userQuery);
-  if (ranked.length === 0) return null;
-
-  const top = ranked[0]!;
-  const second = ranked[1]?.score ?? 0;
-  const margin = top.score - second;
-  let confidence = Math.min(1, top.score + margin * 0.35);
-
-  const topic = getTopicById(top.id);
+function buildSessionRoute(
+  topicId: string,
+  baseConfidence: number,
+  userQuery: string
+): SessionRoute | null {
+  const topic = getTopicById(topicId);
   if (!topic) return null;
 
+  let confidence = baseConfidence;
   for (const re of topic.blockTitlePatterns ?? []) {
     if (re.test(userQuery)) confidence *= 0.55;
   }
@@ -60,6 +58,43 @@ export function routeQueryToSession(userQuery: string): SessionRoute | null {
     confidence,
     topic,
   };
+}
+
+export function routeQueryToSession(userQuery: string): SessionRoute | null {
+  const ranked = scoreTopicsForQuery(userQuery);
+  if (ranked.length === 0) return null;
+
+  const top = ranked[0]!;
+  const second = ranked[1]?.score ?? 0;
+  const margin = top.score - second;
+  const confidence = Math.min(1, top.score + margin * 0.35);
+
+  return buildSessionRoute(top.id, confidence, userQuery);
+}
+
+/** Step 3 — intent router leads; regex catalog confirms/fallback. */
+export function resolveSessionRoute(
+  userQuery: string,
+  intentRoute?: RagIntentRoute | null
+): SessionRoute | null {
+  const intentMin = parseEnvFloat(process.env.RAG_INTENT_ROUTE_MIN_CONFIDENCE, 0.65);
+
+  if (
+    intentRoute &&
+    intentRoute.intents.length > 0 &&
+    intentRoute.confidence >= intentMin
+  ) {
+    for (const intentId of intentRoute.intents) {
+      const route = buildSessionRoute(
+        intentId,
+        Math.min(1, intentRoute.confidence),
+        userQuery
+      );
+      if (route) return route;
+    }
+  }
+
+  return routeQueryToSession(userQuery);
 }
 
 export function rowMatchesTopic(
@@ -146,6 +181,60 @@ export function docKeysForRoute(
   return keys;
 }
 
+/** Re-order routed doc keys for query-specific primary preference within a topic. */
+export function prioritizeRoutedDocKeys(
+  userQuery: string,
+  route: SessionRoute,
+  keys: string[],
+  titleByKey: Map<string, string>
+): string[] {
+  if (keys.length < 2) return keys;
+
+  const scoreKey = (key: string, rules: Array<[RegExp, number]>): number => {
+    const t = (titleByKey.get(key) ?? '').toLowerCase();
+    let s = 0;
+    for (const [re, w] of rules) {
+      if (re.test(t)) s += w;
+    }
+    return s;
+  };
+
+  if (route.topicId === 'hire_apprentice') {
+    const q = userQuery.toLowerCase();
+    let rules: Array<[RegExp, number]> = [];
+    if (/\bscreening\b/i.test(q) || /\bfirst apprentice\b/i.test(q)) {
+      rules = [
+        [/screening questions/i, 4],
+        [/hr for tradies/i, 3],
+        [/hiring cheat/i, 2],
+        [/sexy job ad/i, -2],
+      ];
+    } else if (/\bjob ad\b/i.test(q) || /\bwrite\b.*\bad\b/i.test(q)) {
+      rules = [
+        [/sexy job ad/i, 4],
+        [/hiring cheat/i, 3],
+        [/hr for tradies/i, 1],
+      ];
+    }
+    if (rules.length > 0) {
+      return [...keys].sort((a, b) => scoreKey(b, rules) - scoreKey(a, rules));
+    }
+  }
+
+  return keys;
+}
+
+/** Strong topic route — do not let unrelated vector consensus override the pool. */
+export function vectorConsensusConflictsWithRoute(
+  route: SessionRoute | null,
+  routedDocKeys: string[],
+  consensusKey: string | null
+): boolean {
+  if (!route || !consensusKey || routedDocKeys.length === 0) return false;
+  if (route.confidence < ROUTE_RERANK_ONLY) return false;
+  return !routedDocKeys.includes(consensusKey);
+}
+
 export function shouldLockPrimaryToRoute(route: SessionRoute | null): boolean {
   return route != null && route.confidence >= ROUTE_LOCK_PRIMARY;
 }
@@ -154,7 +243,10 @@ export function shouldRerankWithinRouteOnly(route: SessionRoute | null): boolean
   return route != null && route.confidence >= ROUTE_RERANK_ONLY;
 }
 
-/** High-confidence topic route: skip Cohere rerank (session scoring already narrowed docs). */
+/**
+ * Very strong topic route only: skip Cohere rerank (session scoring already narrowed docs).
+ * Weaker routes still rerank — see RAG_SKIP_RERANK_CONFIDENCE (default 0.92).
+ */
 export function shouldSkipRerank(
   route: SessionRoute | null,
   intent?: RagQueryIntent

@@ -1,0 +1,22 @@
+[PASS] generic-pricing-1 — primary OK: Understanding the Five Profit Levers with Tradies In Business (00:04–00:29)
+[PASS] generic-pricing-2 — primary OK: Done With You Session on Backcosting (14:10–14:33)
+[PASS] generic-systems-1 — primary OK: Systemology Expert Session (00:56–01:17)
+[PASS] generic-systems-2 — primary OK: 7 Myths of Systemising your Business with James Brown (13:59–14:20)
+[PASS] generic-cashflow-1 — primary OK: How To: Cashflow Forecast (00:02–00:25)
+[PASS] generic-cashflow-2 — primary OK: How To: Cashflow Forecast (00:02–00:25)
+[PASS] generic-hiring-1 — primary OK: Write Your Sexy Job Ad (Sexy Ad Builder) (10:47–11:19)
+[PASS] generic-hiring-2 — primary OK: Hiring Cheat Sheet
+[PASS] generic-marketing-1 — primary OK: Expert Session with Rhys from Kaha Digital (00:07–00:31)
+[FAIL] generic-delegation-1 — primary not in [Get Off the Tools, Delegation] — got: Expert Session with Dani Ferrier (01:25–01:50)
+[PASS] generic-quotes-1 — primary OK: Should You Charge For Quotes (00:00–00:07)
+[FAIL] generic-cash-bank-1 — intent want cash_bank_balance, got route=cashflow_slow_months intents=[cashflow_slow_months]; primary not in [Cash vs Accrual, WTF is Cash] — got: How to Reduce Cash Flow Stress (28:03–28:24)
+[PASS] generic-focus-1 — primary OK: Finding Daily Focus (01:39–02:01)
+[FAIL] generic-price-objection-1 — intent want pdf_price_objection, got route=charge_quotes intents=[charge_quotes,job_pricing_margin]; primary not in [Price Objection, Objection, Screen Customers] — got: Should You Charge For Quotes (00:00–00:07)
+[PASS] generic-debtors-1 — primary OK: Debtor Management Process v.042025
+[PASS] generic-content-1 — primary OK: Turning Your Ideas Into Content with Sam Winch (00:00–00:30)
+[PASS] generic-meeting-1 — primary OK: Done With You Session with Nic & Waz on Meeting Structure (10:17–10:40)
+[FAIL] generic-fy-1 — primary not in [Two Drunk Accountants, Financial Jam with Two Drunk] — got: Momentum Meet 16 July 2025 (14:49–15:14); primary must not match "Momentum Meet 16 July"
+[FAIL] generic-eofy-1 — intent want eofy_webinar, got route=fy_hopeful intents=[fy_hopeful]; primary not in [Get Ready for EOFY, EOFY Webinar] — got: Financial Jam with Two Drunk Accountants (35:28–35:46)
+[FAIL] generic-systemology-1 — intent want systemology, got route=systems_where_to_start intents=[systems_where_to_start]
+
+Pass: 14/20 (70.0%)

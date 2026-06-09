@@ -1,11 +1,18 @@
 import type { RagQueryIntent } from '@/lib/ai/rag-query-mode';
 import {
+  classifyRetrievalMode,
+  shouldRunKeywordExpansion,
+} from '@/lib/ai/rag-retrieval-mode';
+import {
   computeRewriteGate,
   type RewriteGateResult,
   type RewriteMode,
 } from '@/lib/ai/rag-rewrite-gate';
 
 export type RagLlmRewrite = {
+  /** Short keyword phrases for parallel vector embed (2–6 words each). */
+  keywordExpansions: string[];
+  /** Heuristic session angles from topic catalog — keyword embeds only. */
   searchQueries: string[];
   speakerHints: string[];
   topicPhrases: string[];
@@ -17,18 +24,20 @@ export type RagRewriteMeta = {
   topicHintUsed: boolean;
 };
 
-const REWRITE_SYSTEM = (maxQueries: number) => `You help search a Tradie in Business (TiB) coaching knowledge base of video transcripts and PDFs.
+const EXPANSION_SYSTEM = (maxKeywords: number) => `You help search a Tradie in Business (TiB) coaching knowledge base of video transcripts and PDFs.
 Return ONLY valid JSON with:
-- search_queries: ${maxQueries} short alternative search strings (distinct angles) using TiB vocabulary. Do not invent quotes or facts.
-- speaker_hints: likely speaker first names if implied (e.g. Rhys, Jackson), else []
-- topic_phrases: 2-6 exact phrases worth literal text search (e.g. "most hopeful time of the year")
+- keyword_expansions: ${maxKeywords} SHORT keyword phrases (2-6 words each). NOT full sentences. TiB vocabulary only. Distinct angles on the user's question.
+- topic_phrases: 2-5 exact phrases worth literal text search (e.g. "cash flow forecast", "slow months")
+- speaker_hints: likely speaker first names if clearly implied (e.g. Rhys, Jackson), else []
 
-Rules:
-- July / new financial year optimism → prefer "Financial Jam" / "Two Drunk Accountants", NOT generic "Get Ready for EOFY" unless the user asks about EOFY prep.
-- Website traffic but no calls → Rhys / Kaha Digital marketing.
-- Apprentice + systems/checklist → Systemology Expert Session.
-- Kitchen + warranty story → Momentum Meet Tara kitchen warranty (not random Momentum dates).
-- If an "Active topic" line is provided and the user question is vague, bias search_queries toward that topic without ignoring the question.`;
+Do NOT return search_queries or rewrite the user question as a sentence.
+
+Rules for keyword_expansions:
+- Use noun phrases and TiB terms: "cash flow forecast", "debtor chasing", "slow season tradie"
+- Never invent quotes, session titles, or facts
+- July / FY optimism → keywords like "most hopeful financial year", "Two Drunk Accountants" — NOT "Get Ready for EOFY" unless user asks EOFY
+- Website traffic no calls → "Rhys Kaha Digital", "website traffic phone calls"
+- If "Active topic" is provided, include 1-2 keywords aligned with that topic plus keywords from the question`;
 
 function rewriteProvider(): 'openai' | 'anthropic' | 'none' {
   const pref = process.env.RAG_LLM_REWRITE_PROVIDER?.trim().toLowerCase();
@@ -74,22 +83,22 @@ function asStringArray(v: unknown, max: number): string[] {
   return out;
 }
 
-function parseRewritePayload(
+function parseKeywordExpansionPayload(
   parsed: Record<string, unknown>,
-  userQuery: string,
-  maxQueries: number
+  maxKeywords: number
 ): RagLlmRewrite | null {
-  const searchQueries = asStringArray(parsed.search_queries, maxQueries);
+  const keywordExpansions = asStringArray(
+    parsed.keyword_expansions ?? parsed.search_queries,
+    maxKeywords
+  );
   const speakerHints = asStringArray(parsed.speaker_hints, 4);
   const topicPhrases = asStringArray(parsed.topic_phrases, 8);
 
-  if (searchQueries.length === 0 && topicPhrases.length === 0) return null;
+  if (keywordExpansions.length === 0 && topicPhrases.length === 0) return null;
 
   return {
-    searchQueries:
-      searchQueries.length > 0
-        ? searchQueries
-        : [userQuery.trim().slice(0, 200)],
+    keywordExpansions,
+    searchQueries: [],
     speakerHints,
     topicPhrases,
   };
@@ -106,9 +115,9 @@ function buildRewriteUserPrompt(userQuery: string, topicHint?: string | null): s
   return parts.join('');
 }
 
-async function llmRewriteWithOpenAI(
+async function llmKeywordExpansionWithOpenAI(
   userQuery: string,
-  maxQueries: number,
+  maxKeywords: number,
   topicHint?: string | null
 ): Promise<RagLlmRewrite | null> {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
@@ -117,7 +126,7 @@ async function llmRewriteWithOpenAI(
   const model =
     process.env.RAG_LLM_REWRITE_MODEL?.trim() || 'gpt-4o-mini';
   const timeoutMs = parseInt(process.env.RAG_LLM_REWRITE_TIMEOUT_MS ?? '15000', 10) || 15000;
-  const maxTokens = maxQueries <= 1 ? 220 : 400;
+  const maxTokens = maxKeywords <= 3 ? 220 : 360;
 
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -131,7 +140,7 @@ async function llmRewriteWithOpenAI(
       temperature: 0,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: REWRITE_SYSTEM(maxQueries) },
+        { role: 'system', content: EXPANSION_SYSTEM(maxKeywords) },
         {
           role: 'user',
           content: buildRewriteUserPrompt(userQuery, topicHint),
@@ -151,12 +160,12 @@ async function llmRewriteWithOpenAI(
   };
   const text = data.choices?.[0]?.message?.content ?? '';
   const parsed = extractJsonObject(text) as Record<string, unknown>;
-  return parseRewritePayload(parsed, userQuery, maxQueries);
+  return parseKeywordExpansionPayload(parsed, maxKeywords);
 }
 
-async function llmRewriteWithAnthropic(
+async function llmKeywordExpansionWithAnthropic(
   userQuery: string,
-  maxQueries: number,
+  maxKeywords: number,
   topicHint?: string | null
 ): Promise<RagLlmRewrite | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
@@ -175,9 +184,9 @@ async function llmRewriteWithAnthropic(
     },
     body: JSON.stringify({
       model,
-      max_tokens: maxQueries <= 1 ? 220 : 400,
+      max_tokens: maxKeywords <= 3 ? 220 : 360,
       temperature: 0,
-      system: REWRITE_SYSTEM(maxQueries),
+      system: EXPANSION_SYSTEM(maxKeywords),
       messages: [
         {
           role: 'user',
@@ -198,7 +207,7 @@ async function llmRewriteWithAnthropic(
   };
   const text = data.content?.find((c) => c.type === 'text')?.text ?? '';
   const parsed = extractJsonObject(text) as Record<string, unknown>;
-  return parseRewritePayload(parsed, userQuery, maxQueries);
+  return parseKeywordExpansionPayload(parsed, maxKeywords);
 }
 
 export type RagRewriteRequest = {
@@ -225,28 +234,39 @@ export async function llmRewriteQueriesForRag(
     topicHintUsed: Boolean(topicHint?.trim()),
   };
 
-  if (gate.mode === 'off' || rewriteProvider() === 'none') {
+  const retrievalMode = classifyRetrievalMode(userQuery);
+  if (
+    retrievalMode !== 'vague' ||
+    !shouldRunKeywordExpansion(retrievalMode) ||
+    gate.mode === 'off' ||
+    rewriteProvider() === 'none'
+  ) {
     return { rewrite: null, meta };
   }
 
-  const maxQueries =
-    gate.mode === 'soft'
-      ? 1
-      : Math.min(
-          Math.max(
-            parseInt(process.env.RAG_LLM_REWRITE_MAX_QUERIES ?? '3', 10) || 3,
-            1
-          ),
-          4
-        );
+  const maxKeywords = Math.min(
+    Math.max(
+      parseInt(process.env.RAG_LLM_KEYWORD_EXPANSIONS ?? '5', 10) || 5,
+      2
+    ),
+    6
+  );
 
   try {
     const provider = rewriteProvider();
     let rewrite: RagLlmRewrite | null = null;
     if (provider === 'openai') {
-      rewrite = await llmRewriteWithOpenAI(userQuery, maxQueries, topicHint);
+      rewrite = await llmKeywordExpansionWithOpenAI(
+        userQuery,
+        maxKeywords,
+        topicHint
+      );
     } else if (provider === 'anthropic') {
-      rewrite = await llmRewriteWithAnthropic(userQuery, maxQueries, topicHint);
+      rewrite = await llmKeywordExpansionWithAnthropic(
+        userQuery,
+        maxKeywords,
+        topicHint
+      );
     }
     return { rewrite, meta };
   } catch (e) {
@@ -255,16 +275,21 @@ export async function llmRewriteQueriesForRag(
   }
 }
 
-/** Soft rewrite without LLM — topic hint as a single search angle. */
+/** Soft expansion without LLM — topic hint as keywords, not a merged sentence. */
 export function softRewriteFromTopicHint(
-  userQuery: string,
+  _userQuery: string,
   topicHint: string | null | undefined
 ): RagLlmRewrite | null {
   if (!topicHint?.trim()) return null;
-  const q = userQuery.trim();
+  const hint = topicHint.trim().slice(0, 120);
+  const words = hint
+    .split(/\s+/)
+    .filter((w) => w.length >= 4)
+    .slice(0, 4);
   return {
-    searchQueries: [`${topicHint.trim()} ${q}`.slice(0, 200)],
+    keywordExpansions: words.length > 0 ? words : [hint],
+    searchQueries: [],
     speakerHints: [],
-    topicPhrases: [topicHint.trim().slice(0, 120)],
+    topicPhrases: [hint],
   };
 }

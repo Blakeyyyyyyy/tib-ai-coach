@@ -60,6 +60,44 @@ export const RAG_TOPIC_CATALOG: RagTopicDef[] = [
     ],
   },
   {
+    id: 'cashflow_slow_months',
+    label: 'Cash flow slow months',
+    weight: 1.18,
+    queryPatterns: [
+      /\bslow months?\b/i,
+      /\bquiet period\b/i,
+      /\bcash gap\b/i,
+      /\btough months?\b/i,
+      /\bseasonal\b.*\bcash\b/i,
+      /\bcash flow\b.*\b(slow|quiet|tough|season)\b/i,
+      /\b(improve|help).*\bcash flow\b/i,
+    ],
+    titlePatterns: [
+      /cashflow forecast/i,
+      /reduce cash flow stress/i,
+      /quick cash flow/i,
+      /cash flow for tradies/i,
+    ],
+    primaryTitlePatterns: [
+      /how to: cashflow forecast/i,
+      /how to cashflow forecast/i,
+      /reduce cash flow stress/i,
+      /quick cash flow strategies/i,
+    ],
+    blockTitlePatterns: [
+      /financial jam with jackson/i,
+      /griffiths/i,
+      /marketing to survive/i,
+    ],
+    heuristicTopicPhrases: [
+      'cash flow forecast',
+      'slow months',
+      'cash gap',
+      'reduce cash flow stress',
+    ],
+    heuristicSearchQueries: ['cashflow forecast slow months tradie'],
+  },
+  {
     id: 'cash_bank_balance',
     label: 'Cash vs bank balance',
     weight: 1.15,
@@ -116,6 +154,118 @@ export const RAG_TOPIC_CATALOG: RagTopicDef[] = [
     heuristicTopicPhrases: ['website traffic', 'phone never rings'],
   },
   {
+    id: 'systems_where_to_start',
+    label: 'Which systems to set up first',
+    weight: 1.28,
+    queryPatterns: [
+      /\bwhat systems\b.*\b(first|start)\b/i,
+      /\bwhich systems\b.*\b(first|start)\b/i,
+      /\bsystems\b.*\b(set up|setup)\b.*\bfirst\b/i,
+      /\b(set up|setup)\b.*\bsystems\b.*\bfirst\b/i,
+      /\bwhere\b.*\bstart\b.*\bsystems\b/i,
+      /\bsystems\b.*\bwhere to start\b/i,
+      /\bfirst systems\b/i,
+      /\bsystemi[sz]e\b.*\bwhere to start\b/i,
+    ],
+    titlePatterns: [
+      /systemology expert/i,
+      /tradie systems map/i,
+      /7 myths of systemising/i,
+      /systemising your business/i,
+    ],
+    primaryTitlePatterns: [
+      /systemology expert/i,
+      /tradie systems map/i,
+      /7 myths of systemising/i,
+    ],
+    sourceFilePatterns: [
+      /systemology expert session\.json/i,
+      /tradie systems map/i,
+      /7 myths of systemising/i,
+    ],
+    titleSearchTerms: [
+      'Systemology Expert Session',
+      'Tradie Systems Map',
+      '7 Myths of Systemising',
+    ],
+    blockTitlePatterns: [
+      /mindmeister/i,
+      /systems mapping using mindmeister/i,
+      /profit first for tradiepreneurs/i,
+      /using ai in your trade/i,
+      /trade-o with renee/i,
+    ],
+    heuristicTopicPhrases: [
+      'where to start systems',
+      'first systems tradie',
+      'systemology',
+    ],
+    sessionBoost: 0.48,
+    blockPenalty: 0.62,
+  },
+  {
+    id: 'job_pricing_margin',
+    label: 'Job pricing and margins',
+    weight: 1.26,
+    queryPatterns: [
+      /\blosing money\b/i,
+      /\blosing on (?:jobs|projects)\b/i,
+      /\bnot making money\b/i,
+      /\bfix pricing\b/i,
+      /\b(?:how|what).*\b(?:pricing|prices)\b/i,
+      /\bpricing\b.*\b(?:fix|wrong|low|raise|charge)\b/i,
+      /\bjob\b.*\b(?:margin|profit|losing)\b/i,
+      /\b(?:margin|margins)\b.*\b(?:low|thin|wrong|improve)\b/i,
+      /\bundercharg/i,
+      /\bbackcost/i,
+      /\bhourly rate\b/i,
+      /\bcharge enough\b/i,
+      /\bhelp\b.*\b(?:pricing|losing|margin|projects)\b/i,
+      /\b(?:pricing|losing|margin)\b.*\b(?:help|fix)\b/i,
+    ],
+    titlePatterns: [
+      /backcosting/i,
+      /hourly rate calculator/i,
+      /five profit levers/i,
+      /price objection/i,
+      /tradiepreneur financial dashboard/i,
+    ],
+    primaryTitlePatterns: [
+      /done with you session on backcosting/i,
+      /hourly rate calculator/i,
+      /five profit levers/i,
+    ],
+    sourceFilePatterns: [
+      /backcosting\.json/i,
+      /hourly_rate_calculator/i,
+      /five profit levers/i,
+    ],
+    titleSearchTerms: [
+      'Done With You Session on Backcosting',
+      'Hourly Rate Calculator',
+      'Five Profit Levers',
+    ],
+    blockTitlePatterns: [
+      /using ai in your trade/i,
+      /financial jam with jackson/i,
+      /\bfinancial jam\b/i,
+      /marketing to survive/i,
+      /mindmeister/i,
+      /trade[- ]?o with renee/i,
+    ],
+    heuristicTopicPhrases: [
+      'losing money on projects',
+      'fix pricing tradie',
+      'job margin backcosting',
+      'hourly rate calculator',
+    ],
+    heuristicSearchQueries: [
+      'backcosting job margin losing money tradie pricing hourly rate',
+    ],
+    sessionBoost: 0.46,
+    blockPenalty: 0.6,
+  },
+  {
     id: 'systemology',
     label: 'Systemology Expert Session',
     queryPatterns: [
@@ -125,7 +275,9 @@ export const RAG_TOPIC_CATALOG: RagTopicDef[] = [
       /\bdocumenting systems\b/i,
     ],
     titlePatterns: [/systemology expert/i],
+    primaryTitlePatterns: [/systemology expert/i],
     blockTitlePatterns: [/tradie systems map checklist/i, /mindmeister/i],
+    sessionBoost: 0.42,
     heuristicSearchQueries: [
       'Systemology Expert Session documenting systems apprentice checklist',
     ],
@@ -146,13 +298,38 @@ export const RAG_TOPIC_CATALOG: RagTopicDef[] = [
   {
     id: 'hire_apprentice',
     label: 'Hire apprentice',
+    weight: 1.22,
     queryPatterns: [
       /\bhire\b.*\bapprentice\b/i,
       /\bapprentice\b.*\b(screening|hire)\b/i,
       /\bfirst apprentice\b/i,
+      /\bjob ad\b/i,
+      /\bwrite\b.*\b(job )?ad\b/i,
+      /\bapprentice\b.*\bad\b/i,
+      /\brecruit\b.*\bapprentice\b/i,
     ],
-    titlePatterns: [/hr for tradies/i],
-    blockTitlePatterns: [/expert sessions done with you screening/i],
+    titlePatterns: [
+      /hr for tradies/i,
+      /sexy job ad/i,
+      /hiring cheat/i,
+    ],
+    primaryTitlePatterns: [
+      /hr for tradies/i,
+      /expert sessions done with you screening/i,
+      /hiring cheat/i,
+      /write your sexy job ad/i,
+    ],
+    titleSearchTerms: [
+      'HR for Tradies',
+      'Expert Sessions Done with You Screening',
+      'Hiring Cheat Sheet',
+      'Write Your Sexy Job Ad',
+    ],
+    blockTitlePatterns: [
+      /expert sessions done with you screening/i,
+      /position description guide/i,
+      /setting boundaries with apprentice/i,
+    ],
     heuristicSearchQueries: [
       'HR for Tradies hire first apprentice screening questions',
     ],
@@ -224,11 +401,94 @@ export const RAG_TOPIC_CATALOG: RagTopicDef[] = [
     titlePatterns: [/nicole davidson/i],
   },
   {
+    id: 'offshore_va_delegation',
+    label: 'Offshore VA delegation (Momentum Meet March 4)',
+    weight: 1.36,
+    queryPatterns: [
+      /\boffshore\b.*\b(va|virtual assistant)/i,
+      /\bvirtual assistant/i,
+      /\boffshore va\b/i,
+      /\benglish\b.*\bsecond language\b/i,
+      /\bsecond language\b/i,
+      /\bdelegat\w*\b.*\b(offshore|virtual assistant|va)\b/i,
+      /\b(offshore|virtual assistant|va)\b.*\bdelegat/i,
+      /\bliteral\b.*\bdirection\b/i,
+    ],
+    titlePatterns: [/momentum meet march 4/i],
+    primaryTitlePatterns: [/momentum meet march 4/i],
+    sourceFilePatterns: [/momentum_meet_march_4/i],
+    titleSearchTerms: ['Momentum Meet March 4', 'offshore VA delegation'],
+    blockTitlePatterns: [
+      /get off the tools/i,
+      /expert session with dani ferrier/i,
+      /expert webinar with joe pane/i,
+    ],
+    heuristicTopicPhrases: [
+      'offshore VA',
+      'English is a second language',
+      'quite literal with how we give direction',
+      'Clear delegation to a VA is extremely important when they are offshore',
+      'miss a lot of the nuances',
+    ],
+    heuristicSearchQueries: [
+      'offshore VA clear delegation English second language literal direction',
+      'Momentum Meet March 4 offshore virtual assistant',
+    ],
+    sessionBoost: 0.5,
+    blockPenalty: 0.6,
+  },
+  {
+    id: 'dani_ferrier_delegation',
+    label: 'Dani Ferrier delegation & Critical Alignment Model',
+    weight: 1.32,
+    queryPatterns: [
+      /\bcritical alignment model\b/i,
+      /\bcritical alignment\b/i,
+      /\bdani ferrier\b/i,
+      /\bdanny ferer\b/i,
+      /\bdelegat\w*\b.*\b(critical alignment|alignment model|concerns?|expectations)\b/i,
+      /\b(critical alignment|alignment model)\b.*\bdelegat\w*/i,
+      /\bconcerns?\b.*\bleaders?\b.*\bdelegat/i,
+      /\bmeaningful connections\b.*\bclients?\b/i,
+      /\bletting go\b.*\bkey clients?\b/i,
+    ],
+    titlePatterns: [/expert session with dani ferrier/i, /dani ferrier/i],
+    primaryTitlePatterns: [/expert session with dani ferrier/i],
+    sourceFilePatterns: [/expert session with dani ferrier\.json/i],
+    titleSearchTerms: ['Expert Session with Dani Ferrier', 'Dani Ferrier'],
+    blockTitlePatterns: [
+      /get off the tools/i,
+      /expert session with kristy/i,
+      /how to work with your partner/i,
+      /momentum meet/i,
+    ],
+    heuristicTopicPhrases: [
+      'critical alignment model',
+      'delegation skills',
+      'meaningful connections clients',
+    ],
+    heuristicSearchQueries: [
+      'Dani Ferrier delegation critical alignment model leaders concerns',
+    ],
+    sessionBoost: 0.48,
+    blockPenalty: 0.58,
+  },
+  {
     id: 'joe_delegation',
     label: 'Joe Pane / Get Off the Tools',
-    queryPatterns: [/\bget off the tools\b/i, /\bdelegat/i],
+    weight: 1.2,
+    queryPatterns: [
+      /\bget off the tools\b/i,
+      /\bdelegat/i,
+      /\bstuck on the tools\b/i,
+      /\bstep back\b.*\b(business|tools)\b/i,
+      /\bstill on the tools\b/i,
+    ],
     titlePatterns: [/get off the tools/i],
+    primaryTitlePatterns: [/get off the tools/i],
+    titleSearchTerms: ['Get Off the Tools'],
     blockTitlePatterns: [/expert webinar with joe pane/i],
+    sessionBoost: 0.44,
   },
   {
     id: 'joe_pane_improv',
@@ -270,8 +530,16 @@ export const RAG_TOPIC_CATALOG: RagTopicDef[] = [
   {
     id: 'masogi',
     label: 'Masogi Friday',
-    queryPatterns: [/\bmasogi\b/i],
-    titlePatterns: [/masogi/i, /legacy archive/i],
+    weight: 1.2,
+    queryPatterns: [/\bmasogi\b/i, /\bfriday session\b/i],
+    titlePatterns: [/masogi/i, /legacy archive/i, /momentum.*jan/i],
+    primaryTitlePatterns: [/masogi/i, /legacy archive/i, /momentum.*jan/i],
+    blockTitlePatterns: [
+      /griffiths/i,
+      /referral based marketing/i,
+      /michael griffiths expert/i,
+    ],
+    heuristicTopicPhrases: ['masogi', 'legacy archive'],
   },
   {
     id: 'griffiths_referrals',
@@ -689,6 +957,9 @@ export const RAG_TOPIC_CATALOG: RagTopicDef[] = [
   },
 ];
 
+const JOE_DELEGATION_EXCLUSIONS =
+  /\b(offshore|virtual assistant|second language|critical alignment|dani ferrier)\b/i;
+
 export function scoreTopicsForQuery(userQuery: string): { id: string; score: number }[] {
   const q = userQuery.replace(/\s+/g, ' ').trim();
   const scores: { id: string; score: number }[] = [];
@@ -696,6 +967,11 @@ export function scoreTopicsForQuery(userQuery: string): { id: string; score: num
   for (const topic of RAG_TOPIC_CATALOG) {
     let score = 0;
     const w = topic.weight ?? 1;
+
+    if (topic.id === 'joe_delegation' && JOE_DELEGATION_EXCLUSIONS.test(q)) {
+      scores.push({ id: topic.id, score: 0 });
+      continue;
+    }
 
     for (const re of topic.queryPatterns) {
       if (re.test(q)) score += 0.22 * w;

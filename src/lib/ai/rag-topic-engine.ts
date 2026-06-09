@@ -194,7 +194,7 @@ export function buildTopicHeuristicRewrite(userQuery: string): RagLlmRewrite {
     add(searchQueries, 'Expert Webinar with Joe Pane Get Off the Tools');
   }
 
-  return { searchQueries, speakerHints, topicPhrases };
+  return { keywordExpansions: [], searchQueries, speakerHints, topicPhrases };
 }
 
 /** Force-include doc keys for active topics (replaces queryHintsForceDocKeys). */

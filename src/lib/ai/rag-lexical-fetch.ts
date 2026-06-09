@@ -14,9 +14,10 @@ export function buildLexicalQuery(
 ): string {
   if (!rewrite) return userQuery;
   return `${userQuery} ${[
-    ...rewrite.searchQueries,
+    ...rewrite.keywordExpansions,
     ...rewrite.topicPhrases,
     ...rewrite.speakerHints,
+    ...rewrite.searchQueries.filter((s) => s.split(/\s+/).length <= 6),
   ].join(' ')}`;
 }
 

@@ -11,6 +11,7 @@
 import { config } from 'dotenv';
 import { readFileSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
+import { ragTestThrottle } from '../src/lib/ai/rag-test-throttle';
 import { retrieveStorageRagWithDebug } from '../src/lib/ai/rag-storage';
 
 config({ path: resolve(process.cwd(), '.env') });
@@ -128,7 +129,9 @@ async function main() {
   let skipped = 0;
   const byTier = { easy: { pass: 0, fail: 0, total: 0 }, hard: { pass: 0, fail: 0, total: 0 } };
 
-  for (const c of cases) {
+  for (let i = 0; i < cases.length; i++) {
+    const c = cases[i]!;
+    await ragTestThrottle(i);
     process.stdout.write(`  ${c.id}… `);
     const { result, debug } = await retrieveStorageRagWithDebug(c.query, openai);
     const primary = debug.primaryTitle ?? result?.primarySourceTitle ?? null;

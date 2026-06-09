@@ -43,6 +43,15 @@ import {
   extraEmbedInputsAfterRewrite,
 } from '@/lib/ai/rag-embed-inputs';
 import {
+  classifyRetrievalMode,
+  shouldUseSessionCardRouting,
+  type RetrievalMode,
+} from '@/lib/ai/rag-retrieval-mode';
+import {
+  fetchContentChunksForSessionCard,
+  fetchSessionCardMatches,
+} from '@/lib/ai/rag-session-card-fetch';
+import {
   buildLexicalQuery,
   fetchLexicalMatchesParallel,
   mergePhraseRows,
@@ -71,7 +80,10 @@ import {
   shouldSingleCitationForMeetingRhythm,
 } from '@/lib/ai/rag-retrieval-penalties';
 import {
-  applyTopicVectorConsensusPrimary,
+  filterTitleKeywordForceKeys,
+  shouldPromoteTitleKeywordAnchor,
+} from '@/lib/ai/rag-title-anchor-policy';
+import {
   isQueryForTopic,
   shouldFetchRhysTitleKeywords,
 } from '@/lib/ai/rag-topic-engine';
@@ -80,11 +92,22 @@ import {
   mergeRouteAnchorsIntoMatches,
 } from '@/lib/ai/rag-route-anchor-fetch';
 import {
+  buildDocPool,
+  filterToDocPool,
+  type DocPoolResult,
+} from '@/lib/ai/rag-doc-pool';
+import {
+  routeQueryIntent,
+  type RagIntentRoute,
+} from '@/lib/ai/rag-intent-router';
+import {
   docKeysForRoute,
-  routeQueryToSession,
+  prioritizeRoutedDocKeys,
+  resolveSessionRoute,
   shouldLockPrimaryToRoute,
   shouldRerankWithinRouteOnly,
   shouldSkipRerank,
+  vectorConsensusConflictsWithRoute,
 } from '@/lib/ai/rag-session-router';
 import {
   dominantVectorDocKey,
@@ -235,6 +258,44 @@ function ensureComparisonDocsInPick(
   return out.slice(0, maxChunks);
 }
 
+function videoSegmentStartSeconds(title: string): number {
+  const m = title.match(/\((\d{1,2}):(\d{2})/);
+  if (!m) return 999999;
+  return parseInt(m[1]!, 10) * 60 + parseInt(m[2]!, 10);
+}
+
+/** Strong topic routes on video JSON: phrase hits first, then earliest segments in the file. */
+function ensureRoutedVideoChunksInPick(
+  pick: MatchRow[],
+  matchPool: MatchRow[],
+  primaryKey: string,
+  phraseChunkIds: Set<string>,
+  maxChunks: number,
+  titleFn: (row: MatchRow) => string
+): MatchRow[] {
+  if (!primaryKey) return pick;
+
+  const primaryRow =
+    pick.find((r) => rowDocKey(r) === primaryKey) ??
+    matchPool.find((r) => rowDocKey(r) === primaryKey);
+  if (!primaryRow || !isVideoTranscriptRow(primaryRow.metadata)) return pick;
+
+  const candidates = matchPool.filter((r) => rowDocKey(r) === primaryKey);
+  if (candidates.length === 0) return pick;
+
+  const sorted = [...candidates].sort((a, b) => {
+    const ap = phraseChunkIds.has(a.id) ? 1 : 0;
+    const bp = phraseChunkIds.has(b.id) ? 1 : 0;
+    if (bp !== ap) return bp - ap;
+    const at = videoSegmentStartSeconds(titleFn(a));
+    const bt = videoSegmentStartSeconds(titleFn(b));
+    if (at !== bt) return at - bt;
+    return (b.similarity ?? 0) - (a.similarity ?? 0);
+  });
+
+  return sorted.slice(0, maxChunks);
+}
+
 function orderPickPrimaryFirst(
   pick: MatchRow[],
   primaryKey: string
@@ -346,7 +407,9 @@ function reorderForTitleKeywordAnchor(
   matches: MatchRow[],
   titleKeywordChunkIds: Set<string>,
   titleKeywordRows: PhraseChunkRow[],
-  userQuery: string
+  userQuery: string,
+  vectorConsensus: string | null = null,
+  topicRoutedKeys: string[] = []
 ): number[] {
   if (titleKeywordChunkIds.size === 0 && titleKeywordRows.length === 0) {
     return effectiveOrder;
@@ -354,6 +417,21 @@ function reorderForTitleKeywordAnchor(
 
   const anchorKey = bestTitleKeywordDocKey(userQuery, titleKeywordRows);
   if (!anchorKey) return effectiveOrder;
+
+  const anchorRow = titleKeywordRows.find(
+    (r) => rowDocKey(r as MatchRow) === anchorKey
+  );
+  if (
+    !shouldPromoteTitleKeywordAnchor({
+      userQuery,
+      titleAnchorKey: anchorKey,
+      anchorTitle: anchorRow?.source_title ?? '',
+      vectorConsensus,
+      topicRoutedKeys,
+    })
+  ) {
+    return effectiveOrder;
+  }
 
   const top = effectiveOrder[0];
   const topRow = top !== undefined ? matches[top] : undefined;
@@ -371,70 +449,40 @@ function reorderForTitleKeywordAnchor(
   return [...anchorFirst, ...rest];
 }
 
+/** Primary document = rerank winner (first content chunk, not session card). */
+function primaryDocKeyFromRerankOrder(
+  effectiveOrder: number[],
+  rerankMatches: MatchRow[]
+): string | null {
+  for (const idx of effectiveOrder) {
+    const row = rerankMatches[idx];
+    if (!row || isSessionCardRow(row.metadata)) continue;
+    return rowDocKey(row);
+  }
+  const first = effectiveOrder[0];
+  if (first === undefined) return null;
+  return rowDocKey(rerankMatches[first]!);
+}
+
 function resolveCitationDocKeys(
   pick: MatchRow[],
-  effectiveOrder: number[],
-  matches: MatchRow[],
+  primaryKey: string | null,
   maxLinks: number,
-  userQuery: string,
-  titleKeywordRows: PhraseChunkRow[],
-  titleKeywordChunkIds: Set<string>,
-  phraseChunkIds: Set<string>,
-  phraseCandidates: string[]
+  intent: RagQueryIntent | null
 ): Set<string> {
-  const primaryIdx = effectiveOrder[0];
-  const primaryKey =
-    primaryIdx !== undefined
-      ? rowDocKey(matches[primaryIdx]!)
-      : pick.length > 0
-        ? rowDocKey(pick[0]!)
-        : null;
-
   if (!primaryKey) return new Set();
 
   const out = new Set<string>([primaryKey]);
 
-  if (phraseChunkIds.size > 0 && phraseCandidates.length > 0) {
-    const phraseOnPrimary = pick.some(
-      (row) =>
-        phraseChunkIds.has(row.id) &&
-        rowDocKey(row) === primaryKey &&
-        chunkContainsPhrase(row.content, phraseCandidates)
-    );
-    if (phraseOnPrimary) return new Set([primaryKey]);
-
+  if (intent === 'comparison') {
     for (const row of pick) {
-      if (
-        phraseChunkIds.has(row.id) &&
-        chunkContainsPhrase(row.content, phraseCandidates)
-      ) {
-        out.add(rowDocKey(row));
-        if (out.size >= maxLinks) return out;
-      }
+      const key = rowDocKey(row);
+      if (isSessionCardRow(row.metadata)) continue;
+      out.add(key);
+      if (out.size >= maxLinks) break;
     }
-    return out;
   }
 
-  if (titleKeywordChunkIds.size > 0 || titleKeywordRows.length > 0) {
-    const anchor = bestTitleKeywordDocKey(userQuery, titleKeywordRows);
-    if (anchor) {
-      out.clear();
-      out.add(anchor);
-      if (out.size >= maxLinks) return out;
-    }
-    for (const row of pick) {
-      if (titleKeywordChunkIds.has(row.id)) {
-        out.add(rowDocKey(row));
-        if (out.size >= maxLinks) return out;
-      }
-    }
-    return out;
-  }
-
-  for (const row of pick) {
-    out.add(rowDocKey(row));
-    if (out.size >= maxLinks) break;
-  }
   return out;
 }
 
@@ -464,6 +512,12 @@ export type RagPipelineDebug = {
   rewriteMode: 'off' | 'soft' | 'full' | null;
   rewriteSignals: string[];
   topicHintUsed: boolean;
+  retrievalMode: RetrievalMode | null;
+  intentRouterIntents: string[];
+  intentRouterConfidence: number | null;
+  intentRouterSource: string | null;
+  docPoolKeys: string[];
+  docPoolSource: string | null;
 };
 
 export type StorageRagResult = {
@@ -519,6 +573,12 @@ async function runRagPipeline(
     rewriteMode: null,
     rewriteSignals: [],
     topicHintUsed: false,
+    retrievalMode: null,
+    intentRouterIntents: [],
+    intentRouterConfidence: null,
+    intentRouterSource: null,
+    docPoolKeys: [],
+    docPoolSource: null,
   };
 
   try {
@@ -555,7 +615,16 @@ async function runRagPipeline(
         : DEFAULT_MAX_KB_LINKS;
 
     const intentParams = resolveRagIntentParams(userQuery);
-    const sessionRoute = routeQueryToSession(userQuery);
+    const retrievalMode = classifyRetrievalMode(userQuery);
+    const rewriteGate = computeRewriteGate(userQuery);
+    const topicHint = options?.topicHint?.trim() || null;
+
+    const intentRoute: RagIntentRoute = await routeQueryIntent(
+      userQuery,
+      topicHint
+    );
+    const sessionRoute = resolveSessionRoute(userQuery, intentRoute);
+
     const forceSingle =
       (process.env.RAG_SINGLE_SOURCE_PDF ?? 'false').toLowerCase() === 'true';
     const singleSource = forceSingle || intentParams.singleSource;
@@ -571,29 +640,39 @@ async function runRagPipeline(
       ? vectorMatchCount
       : DEFAULT_VECTOR_MATCH_COUNT;
 
-    const heuristicRewrite = mergeRagRewrites(userQuery, null);
+    const heuristicRewrite = mergeRagRewrites(userQuery, null, intentRoute);
     const earlyLexical = buildLexicalQuery(userQuery, heuristicRewrite);
 
-    const rewriteGate = computeRewriteGate(userQuery);
-    const topicHint = options?.topicHint?.trim() || null;
-
-    const [llmRewriteResult, earlyLexicalResult, routeAnchors] = await Promise.all([
-      llmRewriteQueriesForRag({
-        userQuery,
-        gate: rewriteGate,
-        topicHint,
-      }),
-      fetchLexicalMatchesParallel(
-        admin,
-        userQuery,
-        earlyLexical,
-        heuristicRewrite?.topicPhrases ?? [],
-        ftsLimit
-      ),
-      sessionRoute
-        ? fetchRouteAnchorChunks(admin, sessionRoute)
-        : Promise.resolve([] as MatchRow[]),
-    ]);
+    const [llmRewriteResult, earlyLexicalResult, routeAnchors, sessionCards] =
+      await Promise.all([
+        shouldUseSessionCardRouting(retrievalMode)
+          ? Promise.resolve({
+              rewrite: null,
+              meta: {
+                gate: rewriteGate,
+                mode: rewriteGate.mode,
+                topicHintUsed: false,
+              },
+            })
+          : llmRewriteQueriesForRag({
+              userQuery,
+              gate: rewriteGate,
+              topicHint,
+            }),
+        fetchLexicalMatchesParallel(
+          admin,
+          userQuery,
+          earlyLexical,
+          heuristicRewrite?.topicPhrases ?? [],
+          ftsLimit
+        ),
+        sessionRoute
+          ? fetchRouteAnchorChunks(admin, sessionRoute)
+          : Promise.resolve([] as MatchRow[]),
+        shouldUseSessionCardRouting(retrievalMode)
+          ? fetchSessionCardMatches(admin, userQuery)
+          : Promise.resolve([] as MatchRow[]),
+      ]);
 
     const rewriteMeta: RagRewriteMeta = llmRewriteResult.meta;
     let llmOnlyRewrite = llmRewriteResult.rewrite;
@@ -601,7 +680,7 @@ async function runRagPipeline(
       llmOnlyRewrite = softRewriteFromTopicHint(userQuery, topicHint);
     }
 
-    const rewrite = mergeRagRewrites(userQuery, llmOnlyRewrite);
+    const rewrite = mergeRagRewrites(userQuery, llmOnlyRewrite, intentRoute);
     const fullLexical = buildLexicalQuery(userQuery, rewrite);
 
     let {
@@ -615,10 +694,24 @@ async function runRagPipeline(
     const lexicalExpanded =
       fullLexical.trim().toLowerCase() !== earlyLexical.trim().toLowerCase();
 
-    const embedInputsInitial = buildEmbedInputs(userQuery, heuristicRewrite);
+    const embedInputsInitial = buildEmbedInputs(
+      userQuery,
+      heuristicRewrite,
+      retrievalMode
+    );
     const extraEmbedInputs = rewrite
-      ? extraEmbedInputsAfterRewrite(userQuery, heuristicRewrite, rewrite)
+      ? extraEmbedInputsAfterRewrite(
+          userQuery,
+          heuristicRewrite,
+          rewrite,
+          retrievalMode
+        )
       : [];
+
+    const sessionCardContent =
+      sessionCards.length > 0
+        ? await fetchContentChunksForSessionCard(admin, sessionCards[0]!)
+        : [];
 
     const [embeddingsInitial, supplementalLexical, extraEmbeddings] =
       await Promise.all([
@@ -727,6 +820,13 @@ async function runRagPipeline(
       matches = mergeRouteAnchorsIntoMatches(matches, routeAnchors);
     }
 
+    if (sessionCards.length > 0) {
+      matches = mergeRouteAnchorsIntoMatches(matches, sessionCards);
+      if (sessionCardContent.length > 0) {
+        matches = mergeRouteAnchorsIntoMatches(matches, sessionCardContent);
+      }
+    }
+
     const routingRows = [
       ...matches.map((row) => ({
         row,
@@ -744,9 +844,36 @@ async function runRagPipeline(
         rowTitle,
       })),
     ];
+    const titleByDocKey = new Map<string, string>();
+    for (const { row, rowDocKey: dk, rowTitle: rt } of routingRows) {
+      titleByDocKey.set(dk(row as MatchRow), rt(row as MatchRow));
+    }
+
     routedDocKeys = sessionRoute
       ? docKeysForRoute(sessionRoute, routingRows)
       : [];
+    if (sessionRoute && routedDocKeys.length > 1) {
+      routedDocKeys = prioritizeRoutedDocKeys(
+        userQuery,
+        sessionRoute,
+        routedDocKeys,
+        titleByDocKey
+      );
+    }
+
+    let docPoolResult: DocPoolResult | null = null;
+    docPoolResult = buildDocPool({
+      matches,
+      vectorMatches,
+      titleKeywordRows,
+      intentRoute,
+      sessionRoute,
+      routedDocKeys,
+      sessionAgreementDocs,
+      rowDocKey,
+      rowTitle,
+    });
+    matches = filterToDocPool(matches, docPoolResult, rowDocKey);
 
     const sessionFirstEnabled =
       (process.env.RAG_SESSION_FIRST ?? 'true').toLowerCase() !== 'false';
@@ -781,7 +908,12 @@ async function runRagPipeline(
         10,
         3
       );
-      if (vectorConsensus) {
+      const trustVectorConsensus = !vectorConsensusConflictsWithRoute(
+        sessionRoute,
+        routedDocKeys,
+        vectorConsensus
+      );
+      if (vectorConsensus && trustVectorConsensus) {
         sessionScores.set(
           vectorConsensus,
           (sessionScores.get(vectorConsensus) ?? 0) + 0.38
@@ -789,6 +921,9 @@ async function runRagPipeline(
       }
 
       const forceKeys: string[] = [];
+      if (sessionCards.length > 0) {
+        forceKeys.push(rowDocKey(sessionCards[0]!));
+      }
       if (sessionRoute && routedDocKeys.length > 0) {
         for (const k of routedDocKeys) {
           sessionScores.set(k, (sessionScores.get(k) ?? 0) + 0.55);
@@ -796,24 +931,41 @@ async function runRagPipeline(
         }
       }
 
-      if (vectorConsensus) forceKeys.push(vectorConsensus);
+      if (vectorConsensus && trustVectorConsensus) forceKeys.push(vectorConsensus);
 
       const titleAnchor = bestTitleKeywordDocKey(userQuery, titleKeywordRows);
       if (titleAnchor) {
         const anchorRow = titleKeywordRows.find(
           (r) => rowDocKey(r as MatchRow) === titleAnchor
         );
+        const anchorTitle = anchorRow
+          ? rowTitle(anchorRow as MatchRow)
+          : '';
         const skipWeakJulyAnchor =
           vectorConsensus &&
           titleAnchor !== vectorConsensus &&
           anchorRow &&
-          titleLooksLikeGenericJulyMomentum(rowTitle(anchorRow as MatchRow));
-        if (!skipWeakJulyAnchor) forceKeys.push(titleAnchor);
+          titleLooksLikeGenericJulyMomentum(anchorTitle);
+        const promoteTitleAnchor =
+          !skipWeakJulyAnchor &&
+          shouldPromoteTitleKeywordAnchor({
+            userQuery,
+            titleAnchorKey: titleAnchor,
+            anchorTitle,
+            vectorConsensus,
+            topicRoutedKeys: routedDocKeys,
+          });
+        if (promoteTitleAnchor) forceKeys.push(titleAnchor);
       }
 
-      forceKeys.push(
-        ...topDocKeysByTitleKeywordHits(titleKeywordRows, rowDocKey, 2)
+      const titleHitKeys = filterTitleKeywordForceKeys(
+        userQuery,
+        topDocKeysByTitleKeywordHits(titleKeywordRows, rowDocKey, 2),
+        vectorConsensus,
+        routedDocKeys,
+        trustVectorConsensus
       );
+      forceKeys.push(...titleHitKeys);
 
       if (sessionAgreementDocs[0]) {
         forceKeys.push(sessionAgreementDocs[0]);
@@ -874,10 +1026,18 @@ async function runRagPipeline(
       process.env.RAG_MAX_CHUNKS_PER_DOC ?? String(DEFAULT_MAX_CHUNKS_PER_DOC),
       10
     );
-    const maxPerDoc =
+    let maxPerDoc =
       Number.isFinite(maxPerDocRaw) && maxPerDocRaw >= 1
         ? Math.min(maxPerDocRaw, 12)
         : DEFAULT_MAX_CHUNKS_PER_DOC;
+
+    if (
+      sessionRoute &&
+      shouldRerankWithinRouteOnly(sessionRoute) &&
+      routedDocKeys.length === 1
+    ) {
+      maxPerDoc = Math.max(maxPerDoc, Math.min(maxChunks, 8));
+    }
 
     const diversifiedMatches = diversifyMatchesByDoc(
       poolForChunks,
@@ -947,109 +1107,25 @@ async function runRagPipeline(
     phraseCandidates
   );
 
+  const postSessionVectorConsensus = dominantVectorDocKey(
+    vectorMatches,
+    rowDocKey,
+    10,
+    3
+  );
   effectiveOrder = reorderForTitleKeywordAnchor(
     effectiveOrder,
     rerankMatches,
     titleKeywordChunkIds,
     titleKeywordRows,
-    userQuery
-  );
-
-  let primaryKey =
-    effectiveOrder.length > 0
-      ? rowDocKey(rerankMatches[effectiveOrder[0]]!)
-      : rowDocKey(rerankMatches[0]!);
-
-  if (phraseIds.size > 0 && phraseCandidates.length > 0) {
-    let bestPhraseRow: MatchRow | null = null;
-    const signalFirst = [
-      ...signalPhrasesFromQuery(userQuery),
-      ...phraseCandidates,
-    ];
-    const tried = new Set<string>();
-    for (const phrase of signalFirst) {
-      const p = phrase.trim().toLowerCase();
-      if (p.length < 4 || tried.has(p)) continue;
-      tried.add(p);
-      for (const row of rerankMatches) {
-        if (!phraseIds.has(row.id)) continue;
-        if (!chunkContainsPhrase(row.content, [phrase])) continue;
-        bestPhraseRow = row;
-        break;
-      }
-      if (bestPhraseRow) break;
-    }
-    if (!bestPhraseRow) {
-      for (const row of rerankMatches) {
-        if (!phraseIds.has(row.id)) continue;
-        if (!chunkContainsPhrase(row.content, phraseCandidates)) continue;
-        if (
-          !bestPhraseRow ||
-          (row.similarity ?? 0) > (bestPhraseRow.similarity ?? 0)
-        ) {
-          bestPhraseRow = row;
-        }
-      }
-    }
-    if (bestPhraseRow) {
-      primaryKey = rowDocKey(bestPhraseRow);
-      const phraseFirst: number[] = [];
-      const rest: number[] = [];
-      for (const idx of effectiveOrder) {
-        if (rowDocKey(rerankMatches[idx]!) === primaryKey) {
-          phraseFirst.push(idx);
-        } else {
-          rest.push(idx);
-        }
-      }
-      effectiveOrder =
-        phraseFirst.length > 0 ? [...phraseFirst, ...rest] : effectiveOrder;
-    }
-  } else if (
-    titleKeywordRows.length > 0 &&
-    !(sessionRoute && shouldLockPrimaryToRoute(sessionRoute))
-  ) {
-    const anchor = bestTitleKeywordDocKey(userQuery, titleKeywordRows);
-    if (anchor) primaryKey = anchor;
-  }
-
-  const topicHintForceKeys = queryHintsForceDocKeys(
     userQuery,
-    matches,
-    titleKeywordRows,
-    rowDocKey,
-    rowTitle,
-    sessionRoute
+    postSessionVectorConsensus,
+    routedDocKeys
   );
 
-  if (!sessionRoute || !shouldLockPrimaryToRoute(sessionRoute)) {
-    primaryKey = applyTopicVectorConsensusPrimary(
-      primaryKey,
-      userQuery,
-      vectorMatches,
-      rerankMatches,
-      rowDocKey,
-      rowTitle,
-      sessionRoute
-    );
+  let primaryKey = primaryDocKeyFromRerankOrder(effectiveOrder, rerankMatches);
 
-    for (const hk of topicHintForceKeys) {
-      if (rerankMatches.some((m) => rowDocKey(m) === hk)) {
-        primaryKey = hk;
-        break;
-      }
-    }
-
-    primaryKey = correctMisroutedPrimaryDocKey(
-      primaryKey,
-      userQuery,
-      rerankMatches,
-      vectorMatches,
-      rowDocKey,
-      rowTitle,
-      sessionRoute
-    );
-
+  if (retrievalMode === 'explicit_session' && primaryKey) {
     primaryKey = correctExplicitSessionPrimaryDocKey(
       primaryKey,
       userQuery,
@@ -1065,6 +1141,22 @@ async function runRagPipeline(
     const lockKey = routedDocKeys[0];
     if (rerankMatches.some((m) => rowDocKey(m) === lockKey)) {
       primaryKey = lockKey;
+    }
+  } else if (primaryKey) {
+    const corrected = correctMisroutedPrimaryDocKey(
+      primaryKey,
+      userQuery,
+      rerankMatches,
+      vectorMatches,
+      rowDocKey,
+      rowTitle,
+      sessionRoute
+    );
+    if (
+      corrected !== primaryKey &&
+      rerankMatches.some((m) => rowDocKey(m) === corrected)
+    ) {
+      primaryKey = corrected;
     }
   }
 
@@ -1111,18 +1203,36 @@ async function runRagPipeline(
       rowTitle
     );
 
-    pick = orderPickPrimaryFirst(pick, primaryKey);
+    pick = orderPickPrimaryFirst(pick, primaryKey ?? '');
+
+    if (
+      sessionRoute &&
+      shouldLockPrimaryToRoute(sessionRoute) &&
+      primaryKey
+    ) {
+      pick = ensureRoutedVideoChunksInPick(
+        pick,
+        poolForChunks,
+        primaryKey,
+        phraseChunkIds,
+        Math.max(maxChunks, effectiveMaxDocs),
+        rowTitle
+      );
+    }
+
+    if (
+      primaryKey &&
+      pick.length > 0 &&
+      !pick.some((m) => rowDocKey(m) === primaryKey)
+    ) {
+      primaryKey = rowDocKey(pick[0]!);
+    }
 
     let citationDocKeys = resolveCitationDocKeys(
       pick,
-      effectiveOrder,
-      rerankMatches,
+      primaryKey,
       effectiveMaxKbLinks,
-      userQuery,
-      titleKeywordRows,
-      titleKeywordChunkIds,
-      phraseChunkIds,
-      phraseCandidates
+      intentParams.intent
     );
 
     if (intentParams.intent === 'factual' && primaryKey) {
@@ -1163,8 +1273,14 @@ async function runRagPipeline(
       contextParts.push(`---\nSource: ${title}\n${row.content.trim()}`);
     }
 
-    const primarySourceTitle =
-      pick.length > 0 ? rowTitle(pick[0]!) : null;
+    const primarySourceTitle = primaryKey
+      ? (() => {
+          const row = pick.find((m) => rowDocKey(m) === primaryKey);
+          return row ? rowTitle(row) : null;
+        })()
+      : pick.length > 0
+        ? rowTitle(pick[0]!)
+        : null;
 
     const result: StorageRagResult = {
       contextBlock: contextParts.join('\n\n'),
@@ -1188,7 +1304,7 @@ async function runRagPipeline(
           citationTitles: sources.map((s) => s.title),
           topVectorTitles: vectorMatches.slice(0, 5).map(rowTitle),
           llmRewriteUsed: Boolean(llmOnlyRewrite),
-          llmSearchQueries: rewrite?.searchQueries ?? [],
+          llmSearchQueries: rewrite?.keywordExpansions ?? [],
           vectorQueryCount: embeddings.length,
           sessionAgreementDocs: sessionAgreementDocs.map((k) => {
             const row = vectorMatches.find((m) => rowDocKey(m) === k);
@@ -1207,6 +1323,19 @@ async function runRagPipeline(
           rewriteMode: rewriteMeta.mode,
           rewriteSignals: rewriteMeta.gate.signals,
           topicHintUsed: rewriteMeta.topicHintUsed,
+          retrievalMode,
+          intentRouterIntents: intentRoute.intents,
+          intentRouterConfidence: intentRoute.confidence,
+          intentRouterSource: intentRoute.source,
+          docPoolKeys: docPoolResult
+            ? [...docPoolResult.allowedDocKeys].map((k) => {
+                const row =
+                  matches.find((m) => rowDocKey(m) === k) ??
+                  vectorMatches.find((m) => rowDocKey(m) === k);
+                return row ? rowTitle(row) : k;
+              })
+            : [],
+          docPoolSource: docPoolResult?.source ?? null,
         }
       : emptyDebug;
 

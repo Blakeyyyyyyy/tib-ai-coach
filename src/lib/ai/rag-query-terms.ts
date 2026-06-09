@@ -195,6 +195,18 @@ const GENERIC_TITLE_TERMS = new Set([
   'quote',
   'job',
   'work',
+  'help',
+  'systems',
+  'system',
+  'pricing',
+  'price',
+  'project',
+  'projects',
+  'losing',
+  'fix',
+  'margin',
+  'margins',
+  'trade',
 ]);
 
 /**
@@ -246,6 +258,18 @@ export function signalPhrasesFromQuery(userQuery: string): string[] {
     /\bcash vs accrual\b/gi,
     /\bhire.{0,20}apprentice\b/gi,
     /\bscreening questions\b/gi,
+    /\blosing money\b/gi,
+    /\blosing on (?:jobs|projects)\b/gi,
+    /\bfix pricing\b/gi,
+    /\bjob (?:margin|profit)\b/gi,
+    /\bhourly rate\b/gi,
+    /\bbackcost(?:ing)?\b/gi,
+    /\bfive profit levers\b/gi,
+    /\bwhere to start\b.*\bsystems\b/gi,
+    /\b(?:what|which) systems\b.*\bfirst\b/gi,
+    /\bcritical alignment model\b/gi,
+    /\bcritical alignment\b/gi,
+    /\bmeaningful connections\b/gi,
   ];
   for (const re of patterns) {
     for (const m of normalized.matchAll(re)) {

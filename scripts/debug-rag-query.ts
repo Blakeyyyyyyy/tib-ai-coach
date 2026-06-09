@@ -7,6 +7,7 @@
 import { config } from 'dotenv';
 import { resolve } from 'path';
 import { createClient } from '@supabase/supabase-js';
+import { classifyRetrievalMode } from '../src/lib/ai/rag-retrieval-mode';
 import { retrieveStorageRagWithDebug } from '../src/lib/ai/rag-storage';
 import { fetchTitleKeywordMatches } from '../src/lib/ai/rag-title-keyword-search';
 import { createServiceRoleClient } from '../src/lib/supabase/service-role';
@@ -24,7 +25,8 @@ async function main() {
     process.exit(1);
   }
 
-  console.log('Query:', query, '\n');
+  console.log('Query:', query);
+  console.log('Retrieval mode:', classifyRetrievalMode(query), '\n');
 
   const admin = createServiceRoleClient();
   const titleHits = await fetchTitleKeywordMatches(admin, query);
@@ -44,6 +46,18 @@ async function main() {
   }
 
   console.log('Retrieval');
+  if (debug.intentRouterIntents.length > 0 || debug.intentRouterSource) {
+    console.log(
+      '  intent router:      ',
+      `[${debug.intentRouterIntents.join(', ')}] conf=${debug.intentRouterConfidence?.toFixed(2) ?? '?'} source=${debug.intentRouterSource ?? '?'}`
+    );
+  }
+  if (debug.docPoolKeys.length > 0) {
+    console.log(
+      '  doc pool:           ',
+      `${debug.docPoolSource ?? 'mixed'} — ${debug.docPoolKeys.join(' | ')}`
+    );
+  }
   if (debug.routedTopicId) {
     console.log(
       '  session route:      ',
@@ -66,8 +80,11 @@ async function main() {
     console.log('  topic hint:          yes (from conversation memory)');
   }
   console.log('  LLM rewrite:        ', debug.llmRewriteUsed ? 'yes' : 'no');
+  if (debug.retrievalMode) {
+    console.log('  retrieval mode:     ', debug.retrievalMode);
+  }
   if (debug.llmRewriteUsed) {
-    console.log('  rewrite queries:    ', debug.llmSearchQueries.join(' | '));
+    console.log('  keyword expansions: ', debug.llmSearchQueries.join(' | '));
     console.log('  vector query count: ', debug.vectorQueryCount);
     if (debug.sessionAgreementDocs.length > 0) {
       console.log('  session agreement:  ', debug.sessionAgreementDocs.join(' | '));

@@ -865,7 +865,11 @@ function AssistantMessage({
           </div>
         )}
 
-        {!isStreaming && !finishingStructured && parsed?.resources && parsed.resources.length > 0 && (
+        {!isStreaming &&
+          !finishingStructured &&
+          parsed?.resources &&
+          parsed.resources.length > 0 &&
+          !(parsed?.rag_sources && parsed.rag_sources.length > 0) && (
           <div className="space-y-2">
             <h4 className="text-xs font-semibold uppercase tracking-wide text-ink-400">
               More from TiB

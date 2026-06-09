@@ -202,6 +202,28 @@
       "query": "We have a weekly leadership meeting but the same three issues reappear and nothing is owned to a deadline. What meeting rhythm and agenda habits actually stick for a 12-person electrical company?",
       "expectPrimaryAny": ["Nic & Waz on Meeting Structure", "Nic & Waz"],
       "expectPrimaryNone": ["Leadership Skills", "Expert Sessin with Mick", "Momentum Meet"]
+    },
+    {
+      "id": "hard-systems-where-first",
+      "tier": "hard",
+      "query": "We're growing fast and everything still runs through me. What systems should we set up first in a trade business?",
+      "expectPrimaryAny": [
+        "Systemology Expert Session",
+        "Tradie Systems Map",
+        "7 Myths of Systemising"
+      ],
+      "expectPrimaryNone": ["MindMeister", "Using AI in your Trade"]
+    },
+    {
+      "id": "hard-pricing-losing-money",
+      "tier": "hard",
+      "query": "I need help with i'm losing money on projects — how do i fix pricing? in my trade business",
+      "expectPrimaryAny": [
+        "Backcosting",
+        "Hourly Rate Calculator",
+        "Five Profit Levers"
+      ],
+      "expectPrimaryNone": ["Using AI in your Trade", "Financial Jam with Jackson"]
     }
   ]
 }

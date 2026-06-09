@@ -53,7 +53,7 @@ export function isVagueUserQuery(userQuery: string): boolean {
   return false;
 }
 
-function hasExactSessionMatch(userQuery: string): boolean {
+export function hasExactSessionMatch(userQuery: string): boolean {
   if (extractExplicitSessionTitle(userQuery)) return true;
   if (/what does the tib session\s+"/i.test(userQuery)) return true;
   if (
