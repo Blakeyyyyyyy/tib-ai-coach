@@ -16,14 +16,17 @@ function escapeIlike(pattern: string): string {
   return pattern.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
 }
 
-function rowFromDb(row: {
-  id: string;
-  content: string;
-  source_title: string;
-  source_url: string | null;
-  resource_url: string | null;
-  metadata: Record<string, unknown> | null;
-}): MatchRow {
+function rowFromDb(
+  row: {
+    id: string;
+    content: string;
+    source_title: string;
+    source_url: string | null;
+    resource_url: string | null;
+    metadata: Record<string, unknown> | null;
+  },
+  similarity = SESSION_CARD_SIMILARITY
+): MatchRow {
   return {
     id: row.id,
     content: row.content,
@@ -31,7 +34,7 @@ function rowFromDb(row: {
     source_url: row.source_url,
     resource_url: row.resource_url,
     metadata: row.metadata,
-    similarity: SESSION_CARD_SIMILARITY,
+    similarity,
   };
 }
 
@@ -147,10 +150,12 @@ export async function fetchContentChunksForSessionCard(
   }
 
   return (data ?? []).map((row) =>
-    rowFromDb({
-      ...row,
-      metadata: row.metadata as Record<string, unknown> | null,
-      similarity: TITLE_KEYWORD_MATCH_SIMILARITY,
-    })
+    rowFromDb(
+      {
+        ...row,
+        metadata: row.metadata as Record<string, unknown> | null,
+      },
+      TITLE_KEYWORD_MATCH_SIMILARITY
+    )
   );
 }
