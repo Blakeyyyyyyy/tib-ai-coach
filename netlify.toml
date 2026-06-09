@@ -1,13 +1,9 @@
 # TiB AI Coach — Netlify (Next.js Runtime v5)
-# Pro plan: ask Netlify support to enable 26s function timeout for this site.
+# Coach uses split APIs: /api/rag/retrieve then /api/chat (each fits function budget).
+# Pro plan: ask Netlify support to raise site function timeout to 26s (not set in this file).
 
 [build]
   command = "npm run build"
-  publish = ".next"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
-
-[functions]
-  # Requires Netlify Pro + support enablement to take effect (max 26s).
-  timeout = 26
